@@ -61,7 +61,7 @@ pre { background: #0c0c0c; padding: 10px; border-radius: 8px; max-height: 240px;
 .badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: #262626; color: var(--muted); }
 .badge.done { background: #183322; color: var(--ok); }
 .badge.failed { background: #3a1717; color: var(--bad); }
-.badge.rendering { background: #3a3110; color: var(--accent); }
+.badge.rendering, .badge.tracking { background: #3a3110; color: var(--accent); }
 .clip .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .clip .actions select { width: auto; padding: 5px 8px; font-size: 13px; }
 .list { display: flex; flex-direction: column; gap: 8px; }

@@ -19,6 +19,7 @@ from detect import detect
 from fetch import download, safe_name
 from proc import Cancelled, Job, probe
 from render import render_clip
+from tracking import analyze
 from transcribe import transcribe_online
 
 _q: "queue.Queue[tuple]" = queue.Queue()
@@ -236,7 +237,12 @@ def _run_render(sid, clip_ids, job: Job):
         old = c.get("output_path")
         try:
             t0 = time.time()
-            thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job)
+            analysis = None
+            if c["face_tracking"] and c["format"] in TRACKED:
+                analysis = _analysis(sid, s, c, src, job)
+                db.update("clips", c["id"], {"status": "rendering"})
+                emit(sid, "clip", id=c["id"], status="rendering")
+            thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job, analysis=analysis)
             if old and old != str(out) and Path(old).exists():
                 Path(old).unlink(missing_ok=True)
             db.update("clips", c["id"], {"status": "done", "output_path": str(out), "thumb_path": str(thumb)})
@@ -253,6 +259,32 @@ def _run_render(sid, clip_ids, job: Job):
     db.update("sessions", sid, {"stage": "done", "error": f"{failed} klip gagal" if failed else None})
     emit(sid, "stage", stage="done", failed=failed)
     log_line(sid, "Selesai.")
+
+
+TRACKED = {"face916", "square", "gaming916"}
+
+
+def _analysis(sid, s, c, src, job):
+    """Ambil analisis wajah dari cache, atau hitung (status klip: tracking)."""
+    row = db.one("SELECT path FROM crop_tracks WHERE clip_id=?", (c["id"],))
+    if row:
+        return json.loads(row["path"])
+    db.update("clips", c["id"], {"status": "tracking"})
+    emit(sid, "clip", id=c["id"], status="tracking")
+    t0 = time.time()
+    try:
+        a = analyze(src, c["start_s"], c["end_s"] - c["start_s"], s["width"], s["height"], job, s["fps"] or 30.0)
+    except Cancelled:
+        raise
+    except Exception as e:  # noqa: BLE001  tracking gagal: render tetap jalan dengan crop tengah
+        log_line(sid, f"Klip {c['rank']}: deteksi wajah gagal ({e}), pakai crop tengah.")
+        return None
+    db.exec_("INSERT OR REPLACE INTO crop_tracks(clip_id, mode, path, shots, created_at) VALUES(?,?,?,?,?)",
+             (c["id"], "auto", json.dumps(a), json.dumps([sh["s"] for sh in a["shots"]]), db.now()))
+    n2 = sum(1 for sh in a["shots"] if len(sh["tracks"]) >= 2)
+    log_line(sid, f"Klip {c['rank']}: {len(a['shots'])} shot, {n2} shot 2 orang, "
+                  f"facecam {'ketemu' if a.get('facecam') else 'tidak ketemu'} ({time.time() - t0:.0f} dtk)")
+    return a
 
 
 def cleanup_work(session_id):

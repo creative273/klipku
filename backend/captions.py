@@ -51,8 +51,12 @@ def group_words(words, max_words):
     return groups
 
 
-def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=None, position_y=None):
-    """words: transkrip penuh [{t,s,e}]. Kembalikan teks file ASS untuk satu klip."""
+def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=None, positions=None):
+    """words: transkrip penuh [{t,s,e}]. Kembalikan teks file ASS untuk satu klip.
+
+    positions: [(s, e, y)] posisi vertikal caption (0..1) per rentang waktu klip.
+    y=None berarti posisi bawaan gaya. e=0 di segmen terakhir = sampai akhir.
+    """
     st = {**DEFAULT_STYLE, **(style or {})}
     overrides = overrides or {}
     scale = height / 1920
@@ -60,7 +64,15 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
         scale = height / 1080 * 0.75
     size = max(18, round(st["font_size"] * scale))
     outline = max(1, round(st["outline_px"] * scale))
-    y = round(height * (position_y if position_y is not None else st["position_y"]))
+
+    def y_at(t):
+        yy = None
+        for k, (ps, pe, py) in enumerate(positions or []):
+            last = k == len(positions) - 1
+            if ps <= t and (t < pe or last or pe <= ps):
+                yy = py
+                break
+        return round(height * (yy if yy is not None else st["position_y"]))
     base, hi = ass_color(st["color"]), ass_color(st["highlight_color"])
 
     sel = []
@@ -99,5 +111,5 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
                 txt = clean(x["t"].upper() if st["uppercase"] else x["t"])
                 parts.append(f"{{\\c{hi}}}{txt}{{\\c{base}}}" if k == wi else txt)
             text = " ".join(parts)
-            lines.append(f"Dialogue: 0,{ass_time(s)},{ass_time(e)},Cap,,0,0,0,,{{\\pos({width // 2},{y})}}{text}")
+            lines.append(f"Dialogue: 0,{ass_time(s)},{ass_time(e)},Cap,,0,0,0,,{{\\pos({width // 2},{y_at(s)})}}{text}")
     return head + "\n".join(lines) + "\n"

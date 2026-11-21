@@ -9,8 +9,8 @@ let settingsCache = null;
 
 const FORMAT_LABEL = { face916: 'Face 9:16', gaming916: 'Gaming', blurbg916: 'Blur BG', square: 'Square', landscape: 'Landscape' };
 const FORMAT_HINT = {
-  face916: 'Crop 9:16 dari tengah video. Ikut wajah otomatis menyusul di versi berikutnya.',
-  gaming916: 'Atas: muka. Bawah: gameplay dari tengah layar, penuh tanpa bar hitam.',
+  face916: 'Crop 9:16 mengikuti wajah. Dua orang dalam satu frame: dibagi atas-bawah.',
+  gaming916: 'Atas: facecam (dicari otomatis). Bawah: gameplay dari tengah layar, penuh tanpa bar hitam.',
   blurbg916: 'Video utuh di tengah, latar belakang blur.',
   square: 'Kotak 1:1.',
   landscape: 'Tetap 16:9.',
@@ -228,15 +228,16 @@ async function renderSession() {
 function clipCard(c, running) {
   const v = c.status === 'done'
     ? el('video', { src: media(`/clips/${c.id}/video`) + `&v=${encodeURIComponent(c.updated_at)}`, controls: true, preload: 'metadata', poster: c.thumb_path ? media(`/clips/${c.id}/thumb`) + `&v=${encodeURIComponent(c.updated_at)}` : null })
-    : el('div', { class: 'ph' }, c.status === 'failed' ? `Gagal render: ${c.error || ''}` : c.status === 'rendering' ? 'Sedang render…' : 'Menunggu render');
+    : el('div', { class: 'ph' }, c.status === 'failed' ? `Gagal render: ${c.error || ''}` : c.status === 'rendering' ? 'Sedang render…' : c.status === 'tracking' ? 'Mencari wajah…' : 'Menunggu render');
   const fmtSel = el('select', { 'aria-label': 'Format klip' },
     ...Object.entries(FORMAT_LABEL).map(([k, lbl]) => el('option', { value: k, selected: k === c.format }, lbl)));
   const subs = el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: !!c.subtitle_on }), 'Subtitle');
+  const face = el('label', { class: 'switch' }, el('input', { type: 'checkbox', checked: !!c.face_tracking }), 'Ikuti wajah');
   const rerender = el('button', {
     class: 'ghost sm', disabled: running,
     onclick: async () => {
       try {
-        await api(`/clips/${c.id}`, { method: 'PATCH', body: { format: fmtSel.value, subtitle_on: subs.querySelector('input').checked } });
+        await api(`/clips/${c.id}`, { method: 'PATCH', body: { format: fmtSel.value, subtitle_on: subs.querySelector('input').checked, face_tracking: face.querySelector('input').checked } });
         await api(`/clips/${c.id}/render`, { method: 'POST' });
         toast(`Klip ${c.rank} masuk antrian render.`);
         scheduleRender();
@@ -253,7 +254,18 @@ function clipCard(c, running) {
       el('div', { class: 'title' }, c.hook_title),
       c.reason ? el('div', { class: 'hint' }, c.reason) : null,
       el('div', { class: 'hint' }, `${fmtDur(c.start_s)}–${fmtDur(c.end_s)} · ${Math.round(c.end_s - c.start_s)} dtk · ${FORMAT_LABEL[c.format]}`),
-      el('div', { class: 'actions' }, fmtSel, subs, rerender, openBtn)));
+      trackNote(c) ? el('div', { class: 'hint' }, trackNote(c)) : null,
+      el('div', { class: 'actions' }, fmtSel, subs, face, rerender, openBtn)));
+}
+
+function trackNote(c) {
+  const t = c.tracking;
+  if (!t || !c.face_tracking) return '';
+  if (c.format === 'gaming916') return t.facecam ? 'Facecam ketemu' : 'Facecam tidak ketemu: bagian atas pakai area tengah';
+  if (!['face916', 'square'].includes(c.format)) return '';
+  const parts = [`${t.shots} shot`, `${t.face_shots} dengan wajah`];
+  if (c.format === 'face916' && t.dual_shots) parts.push(`${t.dual_shots} dibagi 2 orang`);
+  return parts.join(' · ');
 }
 
 $('back').onclick = () => show('history');

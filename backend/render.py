@@ -6,6 +6,7 @@ import os
 import re
 from pathlib import Path
 
+import tracking
 from captions import build_ass
 from config import FFMPEG, FONTS
 
@@ -53,11 +54,43 @@ def center_crop(src_w, src_h, ratio):
     return w, h, even((src_w - w) / 2), even((src_h - h) / 2)
 
 
-def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40):
-    """Kembalikan filter_complex (tanpa caption) yang menghasilkan label [base]."""
+def _crop(box, W, H):
+    w, h, x, y = box
+    return f"crop={w}:{h}:{x}:{y},scale={W}:{H}:flags=lanczos,setsar=1"
+
+
+def _layout_filter(seg, W, H, tag):
+    """Filter untuk satu segmen: single = 1 crop penuh, dual = 2 crop atas-bawah."""
+    if seg["kind"] == "dual":
+        top = H // 2 // 2 * 2
+        return (f"split=2[{tag}a][{tag}b];[{tag}a]{_crop(seg['boxes'][0], W, top)}[{tag}ta];"
+                f"[{tag}b]{_crop(seg['boxes'][1], W, H - top)}[{tag}tb];[{tag}ta][{tag}tb]vstack=inputs=2")
+    return _crop(seg["boxes"][0], W, H)
+
+
+def segments_graph(segs, W, H):
+    """Gabungkan segmen berlayout beda dalam satu filter_complex -> [base]."""
+    if len(segs) == 1:
+        return f"[0:v]{_layout_filter(segs[0], W, H, 'q0')}[base]"
+    n = len(segs)
+    parts = [f"[0:v]split={n}" + "".join(f"[i{k}]" for k in range(n))]
+    for k, sg in enumerate(segs):
+        end = "" if k == n - 1 else f":end={sg['e']:.4f}"
+        parts.append(f"[i{k}]trim=start={sg['s']:.4f}{end},setpts=PTS-STARTPTS,{_layout_filter(sg, W, H, f'q{k}')}[s{k}]")
+    parts.append("".join(f"[s{k}]" for k in range(n)) + f"concat=n={n}:v=1:a=0,setsar=1[base]")
+    return ";".join(parts)
+
+
+def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
+    """Kembalikan (filter_complex -> [base], posisi caption [(s, e, y)] atau None)."""
     if fmt in ("face916", "square"):
-        w, h, x, y = center_crop(src_w, src_h, W / H)
-        return f"[0:v]crop={w}:{h}:{x}:{y},scale={W}:{H}:flags=lanczos,setsar=1[base]", None
+        if analysis:
+            segs = tracking.layout_segments(analysis, W / H, src_w, src_h, allow_dual=(fmt == "face916"))
+        else:
+            w, h, x, y = center_crop(src_w, src_h, W / H)
+            segs = [{"s": 0.0, "e": 0.0, "kind": "single", "boxes": [(w, h, x, y)]}]
+        pos = [(sg["s"], sg["e"], 0.5 if sg["kind"] == "dual" else None) for sg in segs]
+        return segments_graph(segs, W, H), pos
     if fmt == "landscape":
         return (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease:flags=lanczos,"
                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1[base]"), None
@@ -71,21 +104,27 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40):
         bot_h = H - top_h
         # bawah: crop tengah full frame, penuh tanpa bar
         bw, bh, bx, by = center_crop(src_w, src_h, W / bot_h)
-        # atas: tanpa tracking (M1) pakai area tengah-atas. M2 mengganti dengan posisi wajah.
-        tw, th, tx, _ = center_crop(src_w, src_h, W / top_h)
-        tw, th = even(tw * 0.5), even(th * 0.5)
-        tx = even((src_w - tw) / 2)
+        # atas: facecam (wajah yang diam sepanjang klip). Tidak ketemu: area tengah-atas.
+        fc = analysis.get("facecam") if analysis else None
+        if fc:
+            tw, th, tx, ty = tracking.facecam_box(fc, W / top_h, src_w, src_h)
+        else:
+            tw, th, _, _ = center_crop(src_w, src_h, W / top_h)
+            tw, th = even(tw * 0.5), even(th * 0.5)
+            tx, ty = even((src_w - tw) / 2), 0
+        y = top_h / H
         return (f"[0:v]split=2[a][b];"
-                f"[a]crop={tw}:{th}:{tx}:0,scale={W}:{top_h}:flags=lanczos[top];"
+                f"[a]crop={tw}:{th}:{tx}:{ty},scale={W}:{top_h}:flags=lanczos[top];"
                 f"[b]crop={bw}:{bh}:{bx}:{by},scale={W}:{bot_h}:flags=lanczos[bot];"
-                f"[top][bot]vstack=inputs=2,setsar=1[base]"), gaming_split
+                f"[top][bot]vstack=inputs=2,setsar=1[base]"), [(0.0, 0.0, y)]
     raise ValueError(f"format tidak dikenal: {fmt}")
 
 
-def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work: Path, job, style=None):
+def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work: Path, job, style=None,
+                analysis=None):
     fmt = clip["format"]
     W, H = out_size(fmt, clip["resolution"])
-    graph, cap_y = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40))
+    graph, cap_pos = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40), analysis)
     start, end = clip["start_s"], clip["end_s"]
     dur = end - start
 
@@ -95,7 +134,7 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
         ass = work / f"clip_{clip['rank']:02d}.ass"
         ass.write_text(
             build_ass(words, start, end, W, H, style=style,
-                      overrides=json.loads(clip.get("caption_overrides") or "{}"), position_y=cap_y),
+                      overrides=json.loads(clip.get("caption_overrides") or "{}"), positions=cap_pos),
             encoding="utf-8",
         )
         # ffmpeg dijalankan dengan cwd=work, jadi ASS & fontsdir dirujuk relatif:

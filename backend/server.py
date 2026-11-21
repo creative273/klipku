@@ -22,7 +22,7 @@ import pipeline
 from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET
 from server_util import first_line, run
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -197,6 +197,17 @@ def get_session(sid: str):
     if not s:
         raise HTTPException(404, "sesi tidak ada")
     s["clips"] = db.all_("SELECT * FROM clips WHERE session_id=? ORDER BY score_total DESC, rank", (sid,))
+    for c in s["clips"]:
+        t = db.one("SELECT path FROM crop_tracks WHERE clip_id=?", (c["id"],))
+        c["tracking"] = None
+        if t:
+            a = json.loads(t["path"])
+            c["tracking"] = {
+                "shots": len(a["shots"]),
+                "dual_shots": sum(1 for sh in a["shots"] if len(sh["tracks"]) >= 2),
+                "face_shots": sum(1 for sh in a["shots"] if sh["tracks"]),
+                "facecam": bool(a.get("facecam")),
+            }
     s["result_dir"] = str(pipeline.result_dir(s))
     return s
 
@@ -240,6 +251,7 @@ def delete_session(sid: str):
 
 class ClipPatch(BaseModel):
     hook_title: str | None = None
+    face_tracking: bool | None = None
     format: str | None = None
     subtitle_on: bool | None = None
     resolution: str | None = None
@@ -258,7 +270,11 @@ def patch_clip(cid: str, body: ClipPatch):
         raise HTTPException(400, "format tidak dikenal")
     if "subtitle_on" in data:
         data["subtitle_on"] = 1 if data["subtitle_on"] else 0
+    if "face_tracking" in data:
+        data["face_tracking"] = 1 if data["face_tracking"] else 0
     db.update("clips", cid, data)
+    if "start_s" in data or "end_s" in data:
+        db.exec_("DELETE FROM crop_tracks WHERE clip_id=?", (cid,))  # rentang berubah: analisis ulang
     return db.one("SELECT * FROM clips WHERE id=?", (cid,))
 
 
