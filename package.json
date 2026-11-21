@@ -1,7 +1,7 @@
 {
   "name": "klipku",
   "productName": "Klipku",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Klipku - video panjang jadi klip pendek (pemakaian pribadi)",
   "main": "electron/main.js",
   "private": true,

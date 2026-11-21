@@ -22,7 +22,7 @@ import pipeline
 from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET
 from server_util import first_line, run
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,

@@ -81,6 +81,32 @@ def segments_graph(segs, W, H):
     return ";".join(parts)
 
 
+def gameplay_avoid_facecam(bx, bw, fc, src_w, max_shift=0.12):
+    """Geser crop gameplay (bawah) supaya kotak facecam tidak ikut terpotong di pinggirnya.
+
+    Hanya bergeser kalau cukup kecil (<= 12% lebar sumber); kalau facecam ada di tengah, biarkan.
+    """
+    if not fc:
+        return bx
+    if fc.get("rect"):
+        x0, x1 = fc["rect"][0] * src_w, fc["rect"][2] * src_w
+    else:  # tepi kotak tidak ketemu: perkirakan lebar webcam sekitar 3x lebar wajah
+        x0, x1 = (fc["cx"] - fc["w"] * 1.5) * src_w, (fc["cx"] + fc["w"] * 1.5) * src_w
+    left, right = bx, bx + bw
+    if x1 <= left or x0 >= right:
+        return bx  # tidak beririsan
+    limit = src_w * max_shift
+    if (x0 + x1) / 2 > (left + right) / 2:   # facecam di sisi kanan crop: geser ke kiri
+        shift = right - x0
+        nb = bx - shift
+    else:                                     # facecam di sisi kiri crop: geser ke kanan
+        shift = x1 - left
+        nb = bx + shift
+    if shift > limit or nb < 0 or nb + bw > src_w:
+        return bx
+    return even(nb)
+
+
 def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
     """Kembalikan (filter_complex -> [base], posisi caption [(s, e, y)] atau None)."""
     if fmt in ("face916", "square"):
@@ -106,6 +132,7 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
         bw, bh, bx, by = center_crop(src_w, src_h, W / bot_h)
         # atas: facecam (wajah yang diam sepanjang klip). Tidak ketemu: area tengah-atas.
         fc = analysis.get("facecam") if analysis else None
+        bx = gameplay_avoid_facecam(bx, bw, fc, src_w)
         if fc:
             tw, th, tx, ty = tracking.facecam_box(fc, W / top_h, src_w, src_h)
         else:
