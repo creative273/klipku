@@ -79,3 +79,33 @@ td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .toast { position: fixed; right: 20px; bottom: 20px; background: #262626; border: 1px solid var(--line); padding: 12px 16px; border-radius: 10px; max-width: 420px; }
 .toast.bad { border-color: var(--bad); }
 .empty { color: var(--muted); padding: 30px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; }
+
+/* ---------- Caption Editor ---------- */
+.editor { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 20px; align-items: start; }
+.ed-left { position: sticky; top: 0; }
+.stage { position: relative; width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 12px; overflow: hidden; container-type: size; }
+.stage.square { aspect-ratio: 1 / 1; }
+.stage.landscape { aspect-ratio: 16 / 9; }
+.stage video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.stage.landscape video, .stage.blur video { object-fit: contain; }
+.ov-cap, .ov-title { position: absolute; left: 4%; right: 4%; text-align: center; transform: translateY(-50%); pointer-events: none; line-height: 1.15; }
+.ov-cap span { white-space: pre-wrap; }
+.ov-title { color: #111; }
+.ov-title span { background: #fff; padding: .15em .35em; font-family: "Poppins ExtraBold"; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.ed-ctrl { margin-top: 10px; flex-wrap: nowrap; }
+.ed-ctrl input[type=range] { flex: 1; }
+.titles { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.titles button { text-align: left; background: #1f1f1f; border: 1px solid var(--line); }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.presets button { background: #2b3440; border: 2px solid transparent; padding: 14px 8px 8px; text-align: center; position: relative; }
+.presets button.on { border-color: var(--accent); }
+.presets button .nm { display: block; font: 11px "Segoe UI", sans-serif; color: #cfd6de; margin-top: 6px; }
+.presets button .del { position: absolute; top: 2px; right: 6px; font-size: 12px; color: #fca5a5; }
+.grid2.tight { gap: 10px; margin-top: 10px; }
+input[type=color] { padding: 2px; height: 38px; }
+.words { display: flex; flex-wrap: wrap; gap: 4px; max-height: 360px; overflow: auto; padding: 2px; }
+.words input { width: auto; min-width: 2ch; padding: 4px 6px; font-size: 13px; border-radius: 6px; background: #121212; }
+.words input.edited { border-color: var(--accent); }
+.words input.deleted { text-decoration: line-through; opacity: .45; border-style: dashed; }
+.words input.now { background: #3a3110; }
+@media (max-width: 900px) { .editor { grid-template-columns: 1fr; } .ed-left { position: static; max-width: 360px; } }

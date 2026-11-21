@@ -64,6 +64,22 @@ $yunet = "$engine\models\face_detection_yunet_2023mar.onnx"
 Get-File 'https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx' $yunet
 if ((Get-Item $yunet).Length -lt 100000) { throw 'model YuNet tidak valid (kemungkinan file pointer LFS)' }
 
+# 5b. font caption (Google Fonts, SIL Open Font License)
+New-Item -ItemType Directory -Force "$engine\fonts" | Out-Null
+$fonts = @{
+  'Poppins-ExtraBold.ttf'    = 'ofl/poppins/Poppins-ExtraBold.ttf'
+  'Poppins-SemiBold.ttf'     = 'ofl/poppins/Poppins-SemiBold.ttf'
+  'Anton-Regular.ttf'        = 'ofl/anton/Anton-Regular.ttf'
+  'BebasNeue-Regular.ttf'    = 'ofl/bebasneue/BebasNeue-Regular.ttf'
+  'ArchivoBlack-Regular.ttf' = 'ofl/archivoblack/ArchivoBlack-Regular.ttf'
+}
+foreach ($f in $fonts.GetEnumerator()) {
+  Get-File "https://raw.githubusercontent.com/google/fonts/main/$($f.Value)" "$dl\$($f.Key)"
+  if ((Get-Item "$dl\$($f.Key)").Length -lt 20000) { throw "font tidak valid: $($f.Key)" }
+  Copy-Item "$dl\$($f.Key)" "$engine\fonts\"
+}
+Get-File 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/OFL.txt' "$engine\fonts\OFL-Poppins.txt"
+
 # 6. kode backend
 New-Item -ItemType Directory -Force "$engine\backend" | Out-Null
 Copy-Item "$root\backend\*.py", "$root\backend\*.sql" "$engine\backend\"

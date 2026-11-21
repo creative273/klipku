@@ -173,3 +173,26 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
     if not chosen:
         raise RuntimeError("AI tidak menemukan momen yang cocok. Coba durasi klip lain atau model lain.")
     return chosen
+
+
+TITLE_SYSTEM = """Kamu copywriter video pendek. Buat judul hook untuk klip dari transkripnya.
+Aturan: bahasa yang sama dengan transkrip, maksimal 60 karakter, bikin penasaran tapi jujur sesuai isi,
+tanpa hashtag, tanpa emoji. Variasikan gayanya: pertanyaan, pernyataan berani, dan angka/manfaat.
+Balas HANYA JSON: {"titles": ["...", "...", "..."]}"""
+
+
+def regenerate_titles(text, current, provider, model, key, job, hint=None):
+    if not key:
+        raise RuntimeError(f"API key {PROVIDERS[provider]['label']} belum diisi. Buka Pengaturan.")
+    user = f"Judul sekarang: {current}\n"
+    if hint:
+        user += f"Arahan tambahan: {hint}\n"
+    user += f"\nTRANSKRIP KLIP:\n{text[:6000]}"
+    raw = chat(provider, model, key, TITLE_SYSTEM, user, job)
+    try:
+        titles = [str(t).strip()[:80] for t in parse_json(raw).get("titles", []) if str(t).strip()]
+    except Exception:  # noqa: BLE001
+        titles = []
+    if not titles:
+        raise RuntimeError("AI tidak mengembalikan judul. Coba lagi.")
+    return titles[:3]

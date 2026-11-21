@@ -51,11 +51,13 @@ def group_words(words, max_words):
     return groups
 
 
-def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=None, positions=None):
+def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=None, positions=None,
+              subtitles=True, title=None, title_y=0.10):
     """words: transkrip penuh [{t,s,e}]. Kembalikan teks file ASS untuk satu klip.
 
     positions: [(s, e, y)] posisi vertikal caption (0..1) per rentang waktu klip.
     y=None berarti posisi bawaan gaya. e=0 di segmen terakhir = sampai akhir.
+    title: judul hook yang tampil di 3 detik pertama (None = tidak ada).
     """
     st = {**DEFAULT_STYLE, **(style or {})}
     overrides = overrides or {}
@@ -84,6 +86,18 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
             continue  # kata dihapus lewat editor
         sel.append({"t": t.strip(), "s": max(w["s"], clip_start) - clip_start, "e": min(w["e"], clip_end) - clip_start})
 
+    if st.get("box"):
+        # BorderStyle 3 = kotak solid; libass memakai OutlineColour sebagai warna kotak
+        cap_style = (f"Style: Cap,{st['font_family']},{size},{base},{base},{ass_color(st['outline_color'])},"
+                     f"&H00000000,{-1 if st['bold'] else 0},0,0,0,100,100,0,0,3,{outline},0,5,40,40,0,1\n")
+    else:
+        cap_style = (f"Style: Cap,{st['font_family']},{size},{base},{base},{ass_color(st['outline_color'])},"
+                     f"&H80000000,{-1 if st['bold'] else 0},0,0,0,100,100,0,0,1,{outline},{max(1, outline // 2)},"
+                     "5,40,40,0,1\n")
+    tsize = max(16, round(76 * scale))
+    title_style = (f"Style: Title,Poppins ExtraBold,{tsize},&H00111111,&H00111111,&H00FFFFFF,&H00000000,"
+                   f"0,0,0,0,100,100,0,0,3,{max(2, round(16 * scale))},0,5,60,60,0,1\n")
+
     head = (
         "[Script Info]\nScriptType: v4.00+\nWrapStyle: 0\nScaledBorderAndShadow: yes\n"
         f"PlayResX: {width}\nPlayResY: {height}\n\n"
@@ -91,11 +105,17 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
         "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
         "MarginR, MarginV, Encoding\n"
-        f"Style: Cap,{st['font_family']},{size},{base},{base},{ass_color(st['outline_color'])},&H80000000,"
-        f"{-1 if st['bold'] else 0},0,0,0,100,100,0,0,1,{outline},{max(1, outline // 2)},5,40,40,0,1\n\n"
+        + cap_style
+        + title_style + "\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     lines = []
+    if title and title.strip():
+        dur = min(3.0, clip_end - clip_start)
+        lines.append(f"Dialogue: 1,{ass_time(0)},{ass_time(dur)},Title,,0,0,0,,"
+                     f"{{\\pos({width // 2},{round(height * title_y)})\\fad(150,250)\\q0}}{clean(title.strip())}")
+    if not subtitles:
+        sel = []
     groups = group_words(sel, max(1, int(st["words_per_line"] or 3)))
     for gi, g in enumerate(groups):
         g_end = g[-1]["e"]

@@ -155,13 +155,18 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
     start, end = clip["start_s"], clip["end_s"]
     dur = end - start
 
-    if clip.get("subtitle_on", 1):
+    subs = bool(clip.get("subtitle_on", 1))
+    title = clip.get("hook_title") if clip.get("title_overlay") else None
+    if subs or title:
         import json
 
-        ass = work / f"clip_{clip['rank']:02d}.ass"
+        # judul: Gaming di atas panel facecam, format lain 10% dari atas
+        title_y = 0.06 if fmt == "gaming916" else 0.10
+        ass = work / f"clip_{clip['id']}.ass"
         ass.write_text(
             build_ass(words, start, end, W, H, style=style,
-                      overrides=json.loads(clip.get("caption_overrides") or "{}"), positions=cap_pos),
+                      overrides=json.loads(clip.get("caption_overrides") or "{}"), positions=cap_pos,
+                      subtitles=subs, title=title, title_y=title_y),
             encoding="utf-8",
         )
         # ffmpeg dijalankan dengan cwd=work, jadi ASS & fontsdir dirujuk relatif:

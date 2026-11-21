@@ -19,10 +19,11 @@ import config
 import db
 import keys
 import pipeline
+import styles
 from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET
 from server_util import first_line, run
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -44,6 +45,7 @@ async def check_token(request: Request, call_next):
 @app.on_event("startup")
 def startup():
     db.init()
+    styles.seed()
     pipeline.start_worker()
 
 
@@ -86,6 +88,7 @@ def selftest_route():
 # ---------- settings ----------
 
 class SettingsIn(BaseModel):
+    caption_style_id: str | None = None
     provider: str | None = None
     model: str | None = None
     output_dir: str | None = None
@@ -162,6 +165,8 @@ class SessionIn(BaseModel):
     subtitle_on: bool = True
     gaming_split: float | None = None
     language: str | None = None
+    caption_style_id: str | None = None
+    title_overlay: bool = False
 
 
 FORMATS = {"face916", "blurbg916", "square", "landscape", "gaming916"}
@@ -250,6 +255,9 @@ def delete_session(sid: str):
 
 
 class ClipPatch(BaseModel):
+    caption_style_id: str | None = None
+    caption_overrides: dict[str, str] | None = None
+    title_overlay: bool | None = None
     hook_title: str | None = None
     face_tracking: bool | None = None
     format: str | None = None
@@ -272,6 +280,21 @@ def patch_clip(cid: str, body: ClipPatch):
         data["subtitle_on"] = 1 if data["subtitle_on"] else 0
     if "face_tracking" in data:
         data["face_tracking"] = 1 if data["face_tracking"] else 0
+    if "title_overlay" in data:
+        data["title_overlay"] = 1 if data["title_overlay"] else 0
+    if "caption_overrides" in data:
+        clean = {str(int(k)): str(v)[:60] for k, v in (data["caption_overrides"] or {}).items() if str(k).isdigit()}
+        data["caption_overrides"] = json.dumps(clean, ensure_ascii=False)
+    if data.get("caption_style_id") and not db.one("SELECT id FROM caption_styles WHERE id=?",
+                                                    (data["caption_style_id"],)):
+        raise HTTPException(400, "preset caption tidak ada")
+    if "hook_title" in data:
+        data["hook_title"] = (data["hook_title"] or "").strip()[:100] or c["hook_title"]
+    if "start_s" in data or "end_s" in data:
+        s_ = data.get("start_s", c["start_s"])
+        e_ = data.get("end_s", c["end_s"])
+        if s_ < 0 or e_ - s_ < 3:
+            raise HTTPException(400, "Durasi klip minimal 3 detik")
     db.update("clips", cid, data)
     if "start_s" in data or "end_s" in data:
         db.exec_("DELETE FROM crop_tracks WHERE clip_id=?", (cid,))  # rentang berubah: analisis ulang
@@ -285,6 +308,122 @@ def render_clip(cid: str):
         raise HTTPException(404, "klip tidak ada")
     pipeline.render_again(c["session_id"], [cid])
     return {"ok": True}
+
+
+@app.get("/clips/{cid}/words")
+def clip_words(cid: str):
+    """Kata-kata di rentang klip (indeks global transkrip), waktu relatif ke awal klip."""
+    c = db.one("SELECT * FROM clips WHERE id=?", (cid,))
+    if not c:
+        raise HTTPException(404, "klip tidak ada")
+    tr = db.one("SELECT words FROM transcripts WHERE session_id=?", (c["session_id"],))
+    words = json.loads(tr["words"]) if tr else []
+    ov = json.loads(c["caption_overrides"] or "{}")
+    out = []
+    for i, w in enumerate(words):
+        if w["e"] <= c["start_s"] or w["s"] >= c["end_s"]:
+            continue
+        out.append({"i": i, "orig": w["t"], "t": ov.get(str(i), w["t"]),
+                    "s": round(max(w["s"], c["start_s"]) - c["start_s"], 3),
+                    "e": round(min(w["e"], c["end_s"]) - c["start_s"], 3)})
+    return {"clip": c, "words": out, "style": styles.get(c["caption_style_id"])}
+
+
+class TitleIn(BaseModel):
+    hint: str | None = None
+
+
+@app.post("/clips/{cid}/regenerate-title")
+def regenerate_title(cid: str, body: TitleIn):
+    from detect import regenerate_titles
+    from proc import Job
+    c = db.one("SELECT * FROM clips WHERE id=?", (cid,))
+    if not c:
+        raise HTTPException(404, "klip tidak ada")
+    s = db.one("SELECT provider, model FROM sessions WHERE id=?", (c["session_id"],))
+    st = db.get_settings()
+    provider = st["provider"] or s["provider"]
+    model = st["model"] or s["model"]
+    text = " ".join(w["t"] for w in clip_words(cid)["words"])
+    try:
+        titles = regenerate_titles(text, c["hook_title"], provider, model, keys.get(provider), Job(), body.hint)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"titles": titles}
+
+
+# ---------- preset caption & font ----------
+
+class StyleIn(BaseModel):
+    name: str
+    font_family: str
+    font_size: int
+    color: str
+    highlight_color: str
+    outline_color: str = "#000000"
+    outline_px: int = 6
+    bold: int = 0
+    uppercase: int = 1
+    box: int = 0
+    words_per_line: int = 3
+    position_y: float = 0.70
+
+
+def _check_style(b: StyleIn):
+    import re
+    if b.font_family not in styles.FONT_FILES:
+        raise HTTPException(400, "font tidak tersedia")
+    for col in (b.color, b.highlight_color, b.outline_color):
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", col):
+            raise HTTPException(400, f"warna tidak valid: {col}")
+    if not (20 <= b.font_size <= 200 and 0 <= b.outline_px <= 40 and 1 <= b.words_per_line <= 8
+            and 0.05 <= b.position_y <= 0.95 and b.name.strip()):
+        raise HTTPException(400, "nilai gaya di luar batas")
+
+
+@app.get("/caption-styles")
+def list_styles():
+    return {"styles": styles.all_(), "fonts": list(styles.FONT_FILES), "default": db.get_settings()["caption_style_id"]}
+
+
+@app.post("/caption-styles")
+def create_style(b: StyleIn):
+    _check_style(b)
+    if db.one("SELECT id FROM caption_styles WHERE name=?", (b.name.strip(),)):
+        raise HTTPException(400, "Nama preset sudah dipakai")
+    sid = db.new_id()
+    d = b.model_dump()
+    d["name"] = d["name"].strip()
+    cols = ["id", *d.keys(), "builtin", "created_at", "updated_at"]
+    db.exec_(f"INSERT INTO caption_styles({', '.join(cols)}) VALUES({', '.join('?' * len(cols))})",
+             (sid, *d.values(), 0, db.now(), db.now()))
+    return styles.get(sid)
+
+
+@app.delete("/caption-styles/{sid}")
+def delete_style(sid: str):
+    s = db.one("SELECT builtin FROM caption_styles WHERE id=?", (sid,))
+    if not s:
+        raise HTTPException(404, "preset tidak ada")
+    if s["builtin"]:
+        raise HTTPException(400, "Preset bawaan tidak bisa dihapus")
+    db.exec_("DELETE FROM caption_styles WHERE id=?", (sid,))
+    return {"ok": True}
+
+
+@app.get("/fonts/{name}")
+def font_file(name: str):
+    if name not in styles.FONT_FILES.values():
+        raise HTTPException(404, "font tidak ada")
+    return FileResponse(config.FONTS / name, media_type="font/ttf")
+
+
+@app.get("/sessions/{sid}/source")
+def session_source(sid: str):
+    s = db.one("SELECT source_path FROM sessions WHERE id=?", (sid,))
+    if not s or not s["source_path"] or not Path(s["source_path"]).exists():
+        raise HTTPException(404, "video sumber tidak ada")
+    return FileResponse(s["source_path"])
 
 
 def _clip_file(cid, field):

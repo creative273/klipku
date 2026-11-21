@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; media-src http://127.0.0.1:*; style-src 'self'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; media-src http://127.0.0.1:*; font-src http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>Klipku</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -70,6 +70,14 @@
         <span class="lbl">Subtitle di video</span>
         <label class="switch"><input id="subs" type="checkbox" checked><span></span> Tampilkan</label>
       </div>
+      <div>
+        <label class="lbl" for="style">Gaya caption</label>
+        <select id="style"></select>
+      </div>
+      <div>
+        <span class="lbl">Judul hook</span>
+        <label class="switch"><input id="title-ov" type="checkbox"><span></span> Tampilkan di 3 detik awal</label>
+      </div>
     </div>
 
     <div class="row">
@@ -104,6 +112,77 @@
       <details><summary class="hint">Log</summary><pre id="s-log"></pre></details>
     </div>
     <div class="gallery" id="gallery"></div>
+  </section>
+
+  <!-- S05 + S06 + S09: Caption Editor -->
+  <section id="view-editor" class="view">
+    <div class="row between">
+      <div>
+        <button class="ghost sm" id="ed-back">← Kembali ke galeri</button>
+        <h1 id="ed-head">Edit klip</h1>
+      </div>
+      <div class="row">
+        <button class="ghost" id="ed-save">Simpan</button>
+        <button class="primary" id="ed-render">Simpan &amp; render</button>
+      </div>
+    </div>
+    <div class="editor">
+      <div class="ed-left">
+        <div class="stage" id="ed-stage">
+          <video id="ed-video" preload="auto" playsinline></video>
+          <div class="ov-title hidden" id="ed-ov-title"></div>
+          <div class="ov-cap" id="ed-ov-cap"></div>
+        </div>
+        <div class="row ed-ctrl">
+          <button class="ghost sm" id="ed-play">Putar</button>
+          <input type="range" id="ed-seek" min="0" max="100" step="0.01" value="0" aria-label="Posisi">
+          <span class="hint" id="ed-time">0:00</span>
+        </div>
+        <p class="hint">Preview memakai video sumber dengan crop tengah. Posisi crop wajah dan layout 2 orang baru terlihat di hasil render.</p>
+      </div>
+      <div class="ed-right">
+        <div class="card">
+          <h2>Judul hook</h2>
+          <input id="ed-title" maxlength="100">
+          <div class="row" style="margin-top:8px">
+            <button class="ghost sm" id="ed-regen">Buat ulang dengan AI</button>
+            <label class="switch"><input type="checkbox" id="ed-title-ov"> Tampilkan di 3 detik awal</label>
+          </div>
+          <div id="ed-titles" class="titles"></div>
+        </div>
+        <div class="card">
+          <div class="row between"><h2>Gaya caption</h2><label class="switch"><input type="checkbox" id="ed-subs"> Subtitle</label></div>
+          <div class="presets" id="ed-presets"></div>
+          <details id="ed-custom">
+            <summary class="hint">Buat preset sendiri dari gaya ini</summary>
+            <div class="grid2 tight">
+              <div><label class="lbl" for="cs-font">Font</label><select id="cs-font"></select></div>
+              <div><label class="lbl" for="cs-size">Ukuran</label><input type="number" id="cs-size" min="20" max="200"></div>
+              <div><label class="lbl" for="cs-color">Warna teks</label><input type="color" id="cs-color"></div>
+              <div><label class="lbl" for="cs-hi">Warna kata aktif</label><input type="color" id="cs-hi"></div>
+              <div><label class="lbl" for="cs-outline">Warna garis / kotak</label><input type="color" id="cs-outline"></div>
+              <div><label class="lbl" for="cs-opx">Tebal garis</label><input type="number" id="cs-opx" min="0" max="40"></div>
+              <div><label class="lbl" for="cs-wpl">Kata per baris</label><input type="number" id="cs-wpl" min="1" max="8"></div>
+              <div><label class="lbl" for="cs-pos">Posisi vertikal (%)</label><input type="number" id="cs-pos" min="5" max="95"></div>
+              <div><label class="switch"><input type="checkbox" id="cs-upper"> HURUF BESAR</label></div>
+              <div><label class="switch"><input type="checkbox" id="cs-box"> Kotak di belakang teks</label></div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <input id="cs-name" placeholder="Nama preset" maxlength="40" style="flex:1">
+              <button class="ghost sm" id="cs-save">Simpan preset</button>
+            </div>
+          </details>
+        </div>
+        <div class="card">
+          <div class="row between">
+            <h2>Teks caption</h2>
+            <button class="ghost sm" id="ed-reset">Kembalikan semua</button>
+          </div>
+          <p class="hint">Klik kata untuk lompat ke posisinya. Ubah teks kalau transkrip salah. Kosongkan untuk menghapus kata dari caption.</p>
+          <div class="words" id="ed-words"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- S11 -->

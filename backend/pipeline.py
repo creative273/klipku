@@ -19,6 +19,7 @@ from detect import detect
 from fetch import download, safe_name
 from proc import Cancelled, Job, probe
 from render import render_clip
+import styles
 from tracking import analyze
 from transcribe import transcribe_online
 
@@ -105,6 +106,8 @@ def create_session(params: dict) -> dict:
         "resolution": params.get("resolution") or st["resolution"],
         "subtitle_on": 1 if params.get("subtitle_on", True) else 0,
         "gaming_split": float(params.get("gaming_split") or 0.40),
+        "caption_style_id": params.get("caption_style_id") or st.get("caption_style_id") or styles.DEFAULT_ID,
+        "title_overlay": 1 if params.get("title_overlay") else 0,
     }
     _jobs[sid] = Job()
     _q.put(("pipeline", sid, opts))
@@ -197,11 +200,12 @@ def _run_pipeline(sid, opts, job: Job):
     for rank, c in enumerate(found, 1):
         db.exec_(
             "INSERT INTO clips(id, session_id, rank, start_s, end_s, score_total, score_hook, score_flow, score_value, "
-            "reason, hook_title, format, subtitle_on, gaming_split, resolution, status, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "reason, hook_title, format, subtitle_on, gaming_split, resolution, status, caption_style_id, "
+            "title_overlay, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (db.new_id(), sid, rank, c["start_s"], c["end_s"], c["score_total"], c["score_hook"], c["score_flow"],
              c["score_value"], c["reason"], c["hook_title"], opts["format"], opts["subtitle_on"],
-             opts["gaming_split"], opts["resolution"], "pending", db.now(), db.now()),
+             opts["gaming_split"], opts["resolution"], "pending", opts["caption_style_id"], opts["title_overlay"],
+             db.now(), db.now()),
         )
     log_line(sid, f"Momen ditemukan: {len(found)}")
     emit(sid, "clips")
@@ -242,7 +246,8 @@ def _run_render(sid, clip_ids, job: Job):
                 analysis = _analysis(sid, s, c, src, job)
                 db.update("clips", c["id"], {"status": "rendering"})
                 emit(sid, "clip", id=c["id"], status="rendering")
-            thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job, analysis=analysis)
+            thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job,
+                                style=styles.get(c["caption_style_id"]), analysis=analysis)
             if old and old != str(out) and Path(old).exists():
                 Path(old).unlink(missing_ok=True)
             db.update("clips", c["id"], {"status": "done", "output_path": str(out), "thumb_path": str(thumb)})

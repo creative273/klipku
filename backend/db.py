@@ -34,6 +34,7 @@ def init():
     exists = c.execute("SELECT 1 FROM sqlite_master WHERE name='sessions'").fetchone()
     if not exists:
         c.executescript(SCHEMA.read_text(encoding="utf-8"))
+    _migrate(c)
     # sesi yang terputus karena app ditutup paksa: tandai error, jangan menggantung
     c.execute(
         "UPDATE sessions SET stage='error', error='App ditutup saat proses berjalan', updated_at=? "
@@ -41,6 +42,14 @@ def init():
         (now(),),
     )
     c.execute("UPDATE clips SET status='failed', error='App ditutup saat render' WHERE status IN ('tracking','rendering')")
+    c.commit()
+
+
+def _migrate(c):
+    """Tambah kolom baru ke DB versi lama (ALTER TABLE ADD COLUMN aman dijalankan ulang)."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(clips)")}
+    if "title_overlay" not in cols:
+        c.execute("ALTER TABLE clips ADD COLUMN title_overlay INTEGER NOT NULL DEFAULT 0 CHECK (title_overlay IN (0,1))")
     c.commit()
 
 
@@ -82,6 +91,7 @@ DEFAULT_SETTINGS = {
     "clip_count": 5,
     "clip_duration": "30-60",
     "resolution": "1080p",
+    "caption_style_id": "builtin-tegas-kuning",
 }
 
 

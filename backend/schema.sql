@@ -83,6 +83,7 @@ CREATE TABLE clips (
     CHECK (format IN ('face916','blurbg916','square','landscape','gaming916')),
   face_tracking INTEGER NOT NULL DEFAULT 1 CHECK (face_tracking IN (0,1)),
   subtitle_on   INTEGER NOT NULL DEFAULT 1 CHECK (subtitle_on IN (0,1)),
+  title_overlay INTEGER NOT NULL DEFAULT 0 CHECK (title_overlay IN (0,1)), -- judul hook tampil 3 dtk pertama
   caption_style_id TEXT REFERENCES caption_styles(id) ON DELETE SET NULL,
   caption_overrides TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(caption_overrides)), -- {"word_idx": "teks baru"}
   gaming_split  REAL NOT NULL DEFAULT 0.40 CHECK (gaming_split BETWEEN 0.25 AND 0.60), -- tinggi bagian muka
