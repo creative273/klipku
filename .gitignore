@@ -1,0 +1,6 @@
+node_modules/
+dist/
+engine/
+.download/
+selftest-out/
+__pycache__/

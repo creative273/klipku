@@ -1,0 +1,57 @@
+name: build-windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Cache download engine
+        uses: actions/cache@v4
+        with:
+          path: .download
+          key: engine-${{ hashFiles('scripts/fetch-engine.ps1', 'backend/requirements.txt') }}
+
+      - name: Siapkan engine (python, ffmpeg, deno, yt-dlp, model)
+        shell: pwsh
+        run: ./scripts/fetch-engine.ps1
+
+      - name: Tes backend dengan python yang dibundel
+        shell: pwsh
+        run: |
+          $env:KLIPKU_ENGINE = "$PWD\engine"
+          $env:KLIPKU_OUTPUT = "$PWD\selftest-out"
+          & .\engine\python\python.exe -c "import sys; sys.argv=['x']; import server; from fastapi.testclient import TestClient; c=TestClient(server.app); r=c.post('/selftest').json(); [print(('OK  ' if x['ok'] else 'FAIL'), x['test'], '|', x['detail']) for x in r['results']]; sys.exit(0 if r['ok'] else 1)"
+
+      - name: Install npm
+        run: npm ci
+
+      - name: Build installer
+        run: npm run dist
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\*.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Klipku-installer
+          path: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
+          retention-days: 14
