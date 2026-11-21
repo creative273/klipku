@@ -24,7 +24,9 @@ def download(url: str, work: Path, resolution: str, job, emit) -> dict:
         if d.get("status") == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             if total:
-                emit("progress", stage="fetch", pct=round(d.get("downloaded_bytes", 0) * 100 / total, 1))
+                got = d.get("downloaded_bytes", 0)
+                emit("progress", stage="fetch", pct=round(got * 100 / total, 1),
+                     detail=f"Mengunduh video · {got / 1e6:.0f} dari {total / 1e6:.0f} MB")
 
     opts = {
         "format": f"bv*[height<={max_h}]+ba/b[height<={max_h}]/bv*+ba/b",

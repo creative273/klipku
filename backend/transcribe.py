@@ -64,7 +64,8 @@ def transcribe_online(src: Path, duration: float, work: Path, key: str, language
             break
         mp3 = work / f"audio_{i:02d}.mp3"
         extract_audio(src, mp3, start, dur, job)
-        emit("progress", stage="transcribe", pct=round((i + 0.5) * 100 / n, 1))
+        emit("progress", stage="transcribe", pct=round((i + 0.5) * 100 / n, 1),
+             detail=f"Transkrip online bagian {i + 1} dari {n}" if n > 1 else "Transkrip online (Groq)")
         res = groq_chunk(mp3, key, language, job)
         lang = lang or res.get("language")
         for w in res.get("words") or []:

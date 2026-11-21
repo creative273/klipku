@@ -1,7 +1,9 @@
 """Menjalankan executable bundel (ffmpeg/ffprobe) tanpa shell, bisa dibatalkan."""
 import json
+import re
 import subprocess
 import threading
+import time
 
 from config import FFPROBE, NO_WINDOW
 
@@ -28,8 +30,12 @@ class Job:
             if self._proc and self._proc.poll() is None:
                 self._proc.kill()
 
-    def run(self, args, timeout=None, cwd=None) -> str:
-        """Jalankan, kembalikan stderr+stdout. Raise RuntimeError kalau gagal."""
+    def run(self, args, timeout=None, cwd=None, on_progress=None, total_s=None) -> str:
+        """Jalankan, kembalikan output. Raise RuntimeError kalau gagal.
+
+        on_progress(frac 0..1): untuk ffmpeg, tambahkan "-progress pipe:1 -nostats" di args;
+        baris out_time_us dibaca selama proses berjalan.
+        """
         self.check()
         with self._lock:
             self._proc = subprocess.Popen(
@@ -40,15 +46,39 @@ class Job:
                 cwd=cwd,
                 creationflags=NO_WINDOW,
             )
+        p = self._proc
+        progress_mode = "-progress" in [str(a) for a in args]
+        tail = []
+        deadline = time.time() + timeout if timeout else None
+        killer = None
+        if deadline:
+            killer = threading.Timer(timeout, lambda: p.poll() is None and p.kill())
+            killer.start()
         try:
-            out, _ = self._proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            self._proc.kill()
+            for raw in p.stdout:
+                line = raw.decode("utf-8", errors="replace").rstrip()
+                if progress_mode and on_progress and total_s and line.startswith(("out_time_us=", "out_time_ms=")):
+                    try:
+                        us = int(line.split("=", 1)[1])
+                        on_progress(max(0.0, min(1.0, us / 1e6 / total_s)))
+                    except ValueError:
+                        pass
+                    continue
+                if progress_mode and re.match(r"^[a-z_0-9]+=", line):
+                    continue  # baris -progress lain (frame=, speed=, progress=)
+                tail.append(line)
+                if len(tail) > 60:
+                    del tail[:20]
+            p.wait()
+        finally:
+            if killer:
+                killer.cancel()
+        if deadline and time.time() > deadline and p.returncode != 0:
             raise RuntimeError(f"timeout {timeout}s: {args[0]}")
-        text = out.decode("utf-8", errors="replace")
         self.check()
-        if self._proc.returncode != 0:
-            raise RuntimeError(text.strip().splitlines()[-1] if text.strip() else f"exit {self._proc.returncode}")
+        text = "\n".join(tail)
+        if p.returncode != 0:
+            raise RuntimeError(text.strip().splitlines()[-1] if text.strip() else f"exit {p.returncode}")
         return text
 
 

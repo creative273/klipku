@@ -29,6 +29,7 @@ CREATE TABLE sessions (
     CHECK (stage IN ('queued','fetch','transcribe','detect','render','done','error','cancelled')),
   error         TEXT,
   output_dir    TEXT NOT NULL,
+  opts          TEXT NOT NULL DEFAULT '{}', -- pilihan saat Buat klip (format, resolusi, caption), untuk Coba lagi
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   CHECK ((source_type = 'url' AND source_url IS NOT NULL) OR (source_type = 'file' AND source_path IS NOT NULL))

@@ -1,7 +1,7 @@
 {
   "name": "klipku",
   "productName": "Klipku",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Klipku - video panjang jadi klip pendek (pemakaian pribadi)",
   "main": "electron/main.js",
   "private": true,
@@ -16,15 +16,36 @@
   "build": {
     "appId": "id.klipku.app",
     "productName": "Klipku",
-    "directories": { "output": "dist" },
-    "files": ["electron/**", "ui/**", "package.json"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**",
+      "ui/**",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "engine", "to": "engine", "filter": ["**/*", "!**/__pycache__/**"] }
+      {
+        "from": "engine",
+        "to": "engine",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**"
+        ]
+      }
     ],
     "asar": true,
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "artifactName": "Klipku-Setup-${version}-win-x64.${ext}"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Klipku-Setup-${version}-win-x64.${ext}",
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,

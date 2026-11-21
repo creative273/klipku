@@ -148,7 +148,7 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
 
 
 def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work: Path, job, style=None,
-                analysis=None, watermark=None):
+                analysis=None, watermark=None, on_progress=None):
     """watermark: {"mode": "off|text|image", "text", "image" (path), "position", "opacity", "size"}"""
     fmt = clip["format"]
     W, H = out_size(fmt, clip["resolution"])
@@ -199,7 +199,7 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
 
     tmp = out_path.with_name(out_path.stem + ".part.mp4")
     try:
-        _encode(job, src, start, dur, graph, tmp, work, extra_inputs)
+        _encode(job, src, start, dur, graph, tmp, work, extra_inputs, on_progress)
     except BaseException:
         tmp.unlink(missing_ok=True)  # batal / gagal: jangan tinggalkan file setengah jadi
         raise
@@ -211,10 +211,10 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
     return thumb
 
 
-def _encode(job, src, start, dur, graph, tmp, work, extra_inputs=()):
+def _encode(job, src, start, dur, graph, tmp, work, extra_inputs=(), on_progress=None):
     job.run([
-        FFMPEG, "-hide_banner", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src, *extra_inputs,
+        FFMPEG, "-hide_banner", "-nostats", "-progress", "pipe:1", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src, *extra_inputs,
         "-filter_complex", graph, "-map", "[v]", "-map", "0:a:0", "-shortest",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp,
-    ], cwd=work)
+    ], cwd=work, on_progress=on_progress, total_s=dur)

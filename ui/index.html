@@ -2,125 +2,173 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; media-src http://127.0.0.1:*; font-src http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; media-src http://127.0.0.1:*; font-src 'self' http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>Klipku</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<nav class="side">
-  <div class="brand">Klipku</div>
-  <button class="nav on" data-view="create">Buat klip</button>
-  <button class="nav" data-view="history">History</button>
-  <button class="nav" data-view="settings">Pengaturan</button>
+<nav class="side" aria-label="Menu utama">
+  <div class="brand">
+    <img src="assets/logo-mark.svg" alt="" width="30" height="30">
+    <span>Klipku</span>
+  </div>
+  <button class="nav on" data-view="create">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Buat klip
+  </button>
+  <button class="nav" data-view="history">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/></svg>History
+  </button>
+  <button class="nav" data-view="settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Pengaturan
+  </button>
+  <button class="active-job hidden" id="active-job" type="button">
+    <span class="aj-top"><span class="aj-label">Sedang diproses</span><b id="aj-pct">0%</b></span>
+    <span class="aj-title" id="aj-title"></span>
+    <span class="meter"><span id="aj-bar"></span></span>
+  </button>
   <div class="ver" id="ver"></div>
 </nav>
 
 <main>
-  <!-- S01 + S02 -->
-  <section id="view-create" class="view on">
-    <h1>Buat klip</h1>
-    <div class="card">
-      <label class="lbl" for="url">Link video</label>
-      <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
-      <div id="drop" class="drop" tabindex="0">
-        <span id="drop-text">atau tarik file video ke sini (MP4, MOV, MKV)</span>
-        <button id="pick" class="ghost sm" type="button">Pilih file</button>
-        <button id="clear-file" class="ghost sm hidden" type="button">Hapus</button>
+  <!-- S01 + S02: Buat klip -->
+  <section id="view-create" class="view on" aria-labelledby="create-h">
+    <h1 id="create-h">Buat klip</h1>
+
+    <div class="block">
+      <h2><span class="num">1</span>Video sumber</h2>
+      <div id="drop" class="source">
+        <input id="url" type="url" placeholder="Tempel link YouTube, TikTok, atau Instagram" autocomplete="off" aria-label="Link video">
+        <div class="source-alt" id="source-alt">
+          <span>atau tarik file video ke sini</span>
+          <button id="pick" class="ghost sm" type="button">Pilih file</button>
+        </div>
+        <div class="file-chip hidden" id="file-chip">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4-2.5z"/></svg>
+          <span id="file-name"></span>
+          <button id="clear-file" class="ghost sm" type="button">Ganti</button>
+        </div>
       </div>
     </div>
 
-    <div class="card grid2">
-      <div>
-        <span class="lbl">Format</span>
-        <div class="chips" id="format">
-          <button data-v="face916" class="on">Face 9:16</button>
-          <button data-v="gaming916">Gaming</button>
-          <button data-v="blurbg916">Blur BG</button>
-          <button data-v="square">Square</button>
-          <button data-v="landscape">Landscape</button>
-        </div>
-        <p class="hint" id="format-hint"></p>
+    <div class="block">
+      <h2><span class="num">2</span>Format</h2>
+      <div class="formats" id="format" role="radiogroup" aria-label="Format klip">
+        <button role="radio" data-v="face916" class="on" aria-checked="true">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect class="fr" x="20" y="4" width="24" height="56" rx="4"/><circle class="hl" cx="32" cy="24" r="7"/><path class="hl" d="M22 44c3-7 17-7 20 0"/></svg>
+          <b>Face 9:16</b><small>Ikut wajah. 2 orang dibagi atas-bawah.</small>
+        </button>
+        <button role="radio" data-v="gaming916" aria-checked="false">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect class="fr" x="20" y="4" width="24" height="56" rx="4"/><line class="ln" x1="20" y1="26" x2="44" y2="26"/><circle class="hl" cx="32" cy="15" r="5"/><path class="hl" d="M25 46h14M32 39v14"/></svg>
+          <b>Gaming</b><small>Facecam di atas, gameplay di bawah.</small>
+        </button>
+        <button role="radio" data-v="blurbg916" aria-checked="false">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect class="fr soft" x="20" y="4" width="24" height="56" rx="4"/><rect class="hl" x="14" y="24" width="36" height="16" rx="2"/></svg>
+          <b>Blur BG</b><small>Video utuh, latar blur.</small>
+        </button>
+        <button role="radio" data-v="square" aria-checked="false">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect class="fr" x="12" y="12" width="40" height="40" rx="4"/><circle class="hl" cx="32" cy="28" r="6"/></svg>
+          <b>Square</b><small>Kotak 1:1.</small>
+        </button>
+        <button role="radio" data-v="landscape" aria-checked="false">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect class="fr" x="4" y="18" width="56" height="28" rx="4"/><path class="hl" d="M28 27v10l8-5z"/></svg>
+          <b>Landscape</b><small>Tetap 16:9.</small>
+        </button>
       </div>
-      <div>
-        <span class="lbl">Durasi klip</span>
-        <div class="chips" id="duration">
-          <button data-v="30">30 dtk</button>
-          <button data-v="60">60 dtk</button>
-          <button data-v="30-60" class="on">30–60 dtk</button>
-        </div>
-      </div>
-      <div>
-        <label class="lbl" for="count">Jumlah klip</label>
-        <input id="count" type="number" min="1" max="10" value="5">
-      </div>
-      <div>
-        <label class="lbl" for="res">Resolusi</label>
-        <select id="res">
-          <option value="720p">720p</option>
-          <option value="1080p" selected>1080p</option>
-          <option value="2k">2K</option>
-          <option value="4k">4K</option>
-        </select>
-      </div>
-      <div id="split-box" class="hidden">
-        <label class="lbl" for="split">Tinggi bagian muka: <b id="split-val">40%</b></label>
+      <div id="split-box" class="inline-opt hidden">
+        <label for="split">Tinggi bagian facecam</label>
         <input id="split" type="range" min="25" max="60" step="5" value="40">
-      </div>
-      <div>
-        <span class="lbl">Subtitle di video</span>
-        <label class="switch"><input id="subs" type="checkbox" checked><span></span> Tampilkan</label>
-      </div>
-      <div>
-        <label class="lbl" for="style">Gaya caption</label>
-        <select id="style"></select>
-      </div>
-      <div>
-        <span class="lbl">Judul hook</span>
-        <label class="switch"><input id="title-ov" type="checkbox"><span></span> Tampilkan di 3 detik awal</label>
+        <b id="split-val">40%</b>
       </div>
     </div>
 
-    <div class="row">
-      <button id="run" class="primary">Run pipeline</button>
-      <span class="hint" id="run-note"></span>
+    <div class="block">
+      <h2><span class="num">3</span>Caption</h2>
+      <div class="presets compact" id="create-presets" role="radiogroup" aria-label="Gaya caption"></div>
+      <div class="row gap-l">
+        <label class="switch"><input id="subs" type="checkbox" checked><span class="sw"></span>Subtitle di video</label>
+        <label class="switch"><input id="title-ov" type="checkbox"><span class="sw"></span>Judul hook di 3 detik awal</label>
+      </div>
+    </div>
+
+    <details class="block more">
+      <summary><span id="more-sum">Durasi 30–60 dtk · 5 klip · 1080p</span><span class="hint">Ubah</span></summary>
+      <div class="grid3">
+        <div>
+          <span class="lbl" id="dur-lbl">Durasi klip</span>
+          <div class="seg" id="duration" role="radiogroup" aria-labelledby="dur-lbl">
+            <button data-v="30">30 dtk</button>
+            <button data-v="60">60 dtk</button>
+            <button data-v="30-60" class="on">30–60 dtk</button>
+          </div>
+        </div>
+        <div>
+          <label class="lbl" for="count">Jumlah klip</label>
+          <input id="count" type="number" min="1" max="10" value="5">
+        </div>
+        <div>
+          <label class="lbl" for="res">Resolusi</label>
+          <select id="res">
+            <option value="720p">720p</option>
+            <option value="1080p" selected>1080p</option>
+            <option value="2k">2K</option>
+            <option value="4k">4K</option>
+          </select>
+        </div>
+      </div>
+    </details>
+
+    <div class="actionbar">
+      <div class="ready" id="ready"></div>
+      <button id="run" class="primary">Buat klip</button>
     </div>
   </section>
 
-  <!-- S03 + S04 -->
+  <!-- S03 + S04: progres + galeri -->
   <section id="view-session" class="view">
-    <div class="row between">
-      <div>
-        <button class="ghost sm" id="back">← Kembali</button>
-        <h1 id="s-title">Sesi</h1>
+    <button class="back" id="back">← History</button>
+    <div class="row between head">
+      <div class="min0">
+        <h1 id="s-title" class="clamp1">Sesi</h1>
         <p class="hint" id="s-meta"></p>
       </div>
       <div class="row">
         <button class="ghost" id="s-folder">Buka folder hasil</button>
         <button class="ghost" id="s-render">Render ulang semua</button>
-        <button class="danger" id="s-cancel">Batalkan</button>
       </div>
     </div>
-    <div class="card" id="progress">
+
+    <div class="progress" id="progress">
+      <div class="p-main">
+        <div class="p-pct tnum" id="p-pct">0%</div>
+        <div class="p-text">
+          <div class="p-stage" id="p-stage">Menunggu antrian</div>
+          <div class="hint" id="p-detail"></div>
+        </div>
+        <div class="p-side">
+          <span class="hint tnum" id="p-time"></span>
+          <button class="danger sm" id="s-cancel">Batalkan</button>
+          <button class="primary sm hidden" id="s-retry">Coba lagi</button>
+        </div>
+      </div>
+      <div class="meter big"><span id="bar-fill"></span></div>
       <ol class="steps" id="steps">
         <li data-s="fetch">Ambil video</li>
         <li data-s="transcribe">Transkrip</li>
         <li data-s="detect">Cari momen</li>
         <li data-s="render">Render</li>
       </ol>
-      <div class="bar"><div id="bar-fill"></div></div>
       <p class="err hidden" id="s-error"></p>
-      <details><summary class="hint">Log</summary><pre id="s-log"></pre></details>
+      <details class="log"><summary class="hint">Log teknis</summary><pre id="s-log"></pre></details>
     </div>
+
     <div class="gallery" id="gallery"></div>
   </section>
 
   <!-- S05 + S06 + S09: Caption Editor -->
   <section id="view-editor" class="view">
-    <div class="row between">
-      <div>
-        <button class="ghost sm" id="ed-back">← Kembali ke galeri</button>
-        <h1 id="ed-head">Edit klip</h1>
-      </div>
+    <button class="back" id="ed-back">← Galeri</button>
+    <div class="row between head">
+      <h1 id="ed-head">Edit klip</h1>
       <div class="row">
         <button class="ghost" id="ed-save">Simpan</button>
         <button class="primary" id="ed-render">Simpan &amp; render</button>
@@ -133,28 +181,47 @@
           <div class="ov-title hidden" id="ed-ov-title"></div>
           <div class="ov-cap" id="ed-ov-cap"></div>
         </div>
-        <div class="row ed-ctrl">
+        <div class="ed-ctrl">
           <button class="ghost sm" id="ed-play">Putar</button>
           <input type="range" id="ed-seek" min="0" max="100" step="0.01" value="0" aria-label="Posisi">
-          <span class="hint" id="ed-time">0:00</span>
+          <span class="hint tnum" id="ed-time">0:00</span>
         </div>
-        <p class="hint">Preview memakai video sumber dengan crop tengah. Posisi crop wajah dan layout 2 orang baru terlihat di hasil render.</p>
+        <p class="hint">Preview memakai video sumber dengan crop tengah. Posisi wajah dan layout 2 orang terlihat di hasil render.</p>
       </div>
       <div class="ed-right">
-        <div class="card">
+        <div class="panel">
+          <h2>Tampilan klip</h2>
+          <div class="seg wrap" id="ed-format" role="radiogroup" aria-label="Format">
+            <button data-v="face916">Face 9:16</button>
+            <button data-v="gaming916">Gaming</button>
+            <button data-v="blurbg916">Blur BG</button>
+            <button data-v="square">Square</button>
+            <button data-v="landscape">Landscape</button>
+          </div>
+          <div class="row gap-l mt">
+            <label class="switch"><input type="checkbox" id="ed-face"><span class="sw"></span>Ikuti wajah</label>
+            <label class="switch"><input type="checkbox" id="ed-subs"><span class="sw"></span>Subtitle</label>
+          </div>
+          <div class="inline-opt hidden" id="ed-split-box">
+            <label for="ed-split">Tinggi facecam</label>
+            <input id="ed-split" type="range" min="25" max="60" step="5">
+            <b id="ed-split-val"></b>
+          </div>
+        </div>
+        <div class="panel">
           <h2>Judul hook</h2>
-          <input id="ed-title" maxlength="100">
-          <div class="row" style="margin-top:8px">
-            <button class="ghost sm" id="ed-regen">Buat ulang dengan AI</button>
-            <label class="switch"><input type="checkbox" id="ed-title-ov"> Tampilkan di 3 detik awal</label>
+          <input id="ed-title" maxlength="100" aria-label="Judul hook">
+          <div class="row between mt">
+            <label class="switch"><input type="checkbox" id="ed-title-ov"><span class="sw"></span>Tampilkan di 3 detik awal</label>
+            <button class="ghost sm" id="ed-regen">Buat 3 pilihan dengan AI</button>
           </div>
           <div id="ed-titles" class="titles"></div>
         </div>
-        <div class="card">
-          <div class="row between"><h2>Gaya caption</h2><label class="switch"><input type="checkbox" id="ed-subs"> Subtitle</label></div>
-          <div class="presets" id="ed-presets"></div>
+        <div class="panel">
+          <h2>Gaya caption</h2>
+          <div class="presets" id="ed-presets" role="radiogroup" aria-label="Gaya caption"></div>
           <details id="ed-custom">
-            <summary class="hint">Buat preset sendiri dari gaya ini</summary>
+            <summary>Buat preset sendiri dari gaya ini</summary>
             <div class="grid2 tight">
               <div><label class="lbl" for="cs-font">Font</label><select id="cs-font"></select></div>
               <div><label class="lbl" for="cs-size">Ukuran</label><input type="number" id="cs-size" min="20" max="200"></div>
@@ -164,38 +231,38 @@
               <div><label class="lbl" for="cs-opx">Tebal garis</label><input type="number" id="cs-opx" min="0" max="40"></div>
               <div><label class="lbl" for="cs-wpl">Kata per baris</label><input type="number" id="cs-wpl" min="1" max="8"></div>
               <div><label class="lbl" for="cs-pos">Posisi vertikal (%)</label><input type="number" id="cs-pos" min="5" max="95"></div>
-              <div><label class="switch"><input type="checkbox" id="cs-upper"> HURUF BESAR</label></div>
-              <div><label class="switch"><input type="checkbox" id="cs-box"> Kotak di belakang teks</label></div>
+              <label class="switch"><input type="checkbox" id="cs-upper"><span class="sw"></span>Huruf besar</label>
+              <label class="switch"><input type="checkbox" id="cs-box"><span class="sw"></span>Kotak di belakang teks</label>
             </div>
-            <div class="row" style="margin-top:10px">
-              <input id="cs-name" placeholder="Nama preset" maxlength="40" style="flex:1">
+            <div class="row mt">
+              <input id="cs-name" placeholder="Nama preset" maxlength="40" class="grow" aria-label="Nama preset">
               <button class="ghost sm" id="cs-save">Simpan preset</button>
             </div>
           </details>
         </div>
-        <div class="card">
+        <div class="panel">
           <div class="row between">
             <h2>Teks caption</h2>
             <button class="ghost sm" id="ed-reset">Kembalikan semua</button>
           </div>
-          <p class="hint">Klik kata untuk lompat ke posisinya. Ubah teks kalau transkrip salah. Kosongkan untuk menghapus kata dari caption.</p>
+          <p class="hint">Klik kata untuk lompat ke posisinya. Ubah kalau transkrip salah, kosongkan untuk menghapus.</p>
           <div class="words" id="ed-words"></div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- S11 -->
+  <!-- S11: History -->
   <section id="view-history" class="view">
     <h1>History</h1>
     <div id="history-list" class="list"></div>
   </section>
 
-  <!-- S12 + S13 -->
+  <!-- S12 + S13: Pengaturan -->
   <section id="view-settings" class="view">
     <h1>Pengaturan</h1>
-    <div class="card">
-      <h2>AI</h2>
+    <div class="panel">
+      <h2>AI pemilih momen</h2>
       <div class="grid2">
         <div>
           <label class="lbl" for="provider">Provider</label>
@@ -207,10 +274,11 @@
           <datalist id="models"></datalist>
         </div>
       </div>
-      <p class="hint">Transkrip mode online memakai Groq Whisper, jadi key Groq wajib diisi kalau transkrip online, walau provider AI-nya Gemini atau OpenRouter.</p>
+      <h3>API key</h3>
+      <p class="hint">Disimpan di Windows Credential Manager, tidak di file. Key Groq juga dipakai untuk transkrip online.</p>
       <div id="keys"></div>
     </div>
-    <div class="card">
+    <div class="panel">
       <h2>Transkrip</h2>
       <div class="grid2">
         <div>
@@ -226,9 +294,9 @@
         </div>
       </div>
       <div id="tr-models" class="models"></div>
-      <p class="hint">Model offline diunduh sekali. Large v3 Turbo lebih akurat untuk bahasa Indonesia tapi lebih lambat di CPU.</p>
+      <p class="hint">Model offline diunduh sekali. Large v3 Turbo lebih akurat untuk bahasa Indonesia, tapi lebih lambat di CPU.</p>
     </div>
-    <div class="card">
+    <div class="panel">
       <h2>Watermark</h2>
       <div class="grid2">
         <div>
@@ -257,35 +325,35 @@
           <div class="row"><img id="wm-preview" class="wm-prev hidden" alt="Logo watermark"><button class="ghost sm" id="wm-pick">Pilih gambar</button></div>
         </div>
         <div>
-          <label class="lbl" for="wm-op">Opasitas: <b id="wm-op-val"></b></label>
+          <label class="lbl" for="wm-op">Opasitas <b id="wm-op-val"></b></label>
           <input id="wm-op" type="range" min="10" max="100" step="5">
         </div>
         <div class="wm-img">
-          <label class="lbl" for="wm-size">Lebar logo: <b id="wm-size-val"></b></label>
+          <label class="lbl" for="wm-size">Lebar logo <b id="wm-size-val"></b></label>
           <input id="wm-size" type="range" min="5" max="50" step="1">
         </div>
       </div>
-      <div class="row" style="margin-top:12px"><button class="ghost" id="wm-save">Simpan watermark</button><span class="hint">Berlaku untuk render berikutnya.</span></div>
+      <div class="row mt"><button class="ghost" id="wm-save">Simpan watermark</button><span class="hint">Berlaku untuk render berikutnya.</span></div>
     </div>
-    <div class="card">
-      <h2>yt-dlp</h2>
-      <p class="hint">YouTube sering berubah. Kalau download mulai gagal, update yt-dlp di sini lalu buka ulang app.</p>
-      <div class="row"><span id="yt-ver" class="hint">Mengecek versi…</span><button class="ghost sm" id="yt-update">Update yt-dlp</button></div>
-    </div>
-    <div class="card">
-      <h2>Output</h2>
-      <span class="lbl">Folder hasil</span>
+    <div class="panel">
+      <h2>Folder hasil</h2>
       <div class="row"><code id="outdir"></code><button class="ghost sm" id="pick-out">Ganti folder</button></div>
     </div>
-    <div class="card">
-      <h2>Tes mesin</h2>
-      <p class="hint">Cek ffmpeg, yt-dlp, deteksi wajah, dan penyimpanan key jalan di laptop ini.</p>
-      <button class="ghost" id="selftest">Jalankan tes</button>
+    <div class="panel">
+      <h2>Mesin aplikasi</h2>
+      <div class="row between">
+        <div><b>yt-dlp</b> <span id="yt-ver" class="hint">Mengecek versi…</span><p class="hint">Kalau download YouTube mulai gagal, update dulu lalu buka ulang app.</p></div>
+        <button class="ghost sm" id="yt-update">Update yt-dlp</button>
+      </div>
+      <div class="row between sep">
+        <div><b>Tes mesin</b><p class="hint">Cek ffmpeg, deteksi wajah, yt-dlp, dan penyimpanan key di laptop ini.</p></div>
+        <button class="ghost sm" id="selftest">Jalankan tes</button>
+      </div>
       <table id="selftest-out"></table>
     </div>
   </section>
 </main>
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>
 </html>

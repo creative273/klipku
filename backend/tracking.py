@@ -82,13 +82,15 @@ def _refine_cut(src, start, t0, t1, src_w, src_h, job, src_fps):
     return max(0.0, first + (k - 0.5) / src_fps)
 
 
-def analyze(src, start, dur, src_w, src_h, job, src_fps=30.0) -> dict:
+def analyze(src, start, dur, src_w, src_h, job, src_fps=30.0, on_progress=None) -> dict:
     import cv2
 
     det = None
     samples = []  # (t, faces[], hist)
     keep = []     # frame kecil (setiap 0.5 dtk, maks 60) untuk deteksi kotak facecam
     for t, fr in _frames(src, start, dur, src_w, src_h, job):
+        if on_progress and len(samples) % FPS == 0:
+            on_progress(min(0.95, t / max(dur, 0.1)))
         if len(samples) % (FPS // 2) == 0 and len(keep) < 60:
             keep.append((len(samples), fr))
         if det is None:

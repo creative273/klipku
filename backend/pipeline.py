@@ -42,6 +42,18 @@ def emit(session_id, kind, **data):
         _cond.notify_all()
 
 
+_last_prog = {}
+
+
+def progress(session_id, stage, pct, detail=None, force=False):
+    """Kirim progres maksimal 4x per detik per sesi (kecuali force)."""
+    now_ = time.time()
+    if not force and now_ - _last_prog.get(session_id, 0) < 0.25:
+        return
+    _last_prog[session_id] = now_
+    emit(session_id, "progress", stage=stage, pct=round(max(0.0, min(100.0, pct)), 1), detail=detail)
+
+
 def events_since(session_id, seq, timeout=15.0):
     with _cond:
         lst = _events.get(session_id, [])
@@ -110,10 +122,26 @@ def create_session(params: dict) -> dict:
         "caption_style_id": params.get("caption_style_id") or st.get("caption_style_id") or styles.DEFAULT_ID,
         "title_overlay": 1 if params.get("title_overlay") else 0,
     }
+    db.update("sessions", sid, {"opts": json.dumps(opts)})
     _jobs[sid] = Job()
     _q.put(("pipeline", sid, opts))
     emit(sid, "stage", stage="queued")
     return db.one("SELECT * FROM sessions WHERE id=?", (sid,))
+
+
+def retry(session_id):
+    """Ulangi pipeline sesi yang gagal/dibatalkan dengan pilihan yang sama."""
+    s = db.one("SELECT * FROM sessions WHERE id=?", (session_id,))
+    opts = json.loads(s.get("opts") or "{}")
+    st = db.get_settings()
+    opts = {"format": "face916", "resolution": st["resolution"], "subtitle_on": 1, "gaming_split": 0.40,
+            "caption_style_id": st.get("caption_style_id") or styles.DEFAULT_ID, "title_overlay": 0, **opts}
+    # pakai pengaturan terbaru: biasanya user baru memperbaiki key/mode/provider sebelum Coba lagi
+    db.update("sessions", session_id, {"stage": "queued", "error": None, "transcribe_mode": st["transcribe_mode"],
+                                       "provider": st["provider"], "model": st["model"]})
+    _jobs[session_id] = Job()
+    _q.put(("pipeline", session_id, opts))
+    emit(session_id, "stage", stage="queued")
 
 
 def render_again(session_id, clip_ids=None):
@@ -166,7 +194,11 @@ def _run_pipeline(sid, opts, job: Job):
     s = db.one("SELECT * FROM sessions WHERE id=?", (sid,))
     work = work_dir(sid, s["output_dir"])
     work.mkdir(parents=True, exist_ok=True)
-    ev = lambda kind, **d: emit(sid, kind, **d)  # noqa: E731
+    def ev(kind, **d):
+        if kind == "progress":
+            progress(sid, d["stage"], d.get("pct", 0), d.get("detail") or STAGE_DETAIL.get(d["stage"]))
+        else:
+            emit(sid, kind, **d)
 
     # 1. fetch
     _stage(sid, "fetch")
@@ -242,19 +274,31 @@ def _run_render(sid, clip_ids, job: Job):
         job.check()
         db.update("clips", c["id"], {"status": "rendering", "error": None})
         emit(sid, "clip", id=c["id"], status="rendering")
-        emit(sid, "progress", stage="render", pct=round(i * 100 / len(clips), 1))
+        n = len(clips)
+        label = f"Klip {i + 1} dari {n}"
+        needs_track = c["face_tracking"] and c["format"] in TRACKED and not db.one(
+            "SELECT 1 FROM crop_tracks WHERE clip_id=?", (c["id"],))
+        split = 0.35 if needs_track else 0.0
+
+        def track_prog(frac, i=i, n=n, label=label, split=split):
+            progress(sid, "render", (i + frac * split) * 100 / n, f"{label} · mencari wajah")
+
+        def enc_prog(frac, i=i, n=n, label=label, split=split):
+            progress(sid, "render", (i + split + frac * (1 - split)) * 100 / n, f"{label} · render")
+
+        progress(sid, "render", i * 100 / n, f"{label} · {'mencari wajah' if needs_track else 'render'}", force=True)
         out = res / f"{c['rank']:02d} - {safe_name(c['hook_title'], 60)}.mp4"
         old = c.get("output_path")
         try:
             t0 = time.time()
             analysis = None
             if c["face_tracking"] and c["format"] in TRACKED:
-                analysis = _analysis(sid, s, c, src, job)
+                analysis = _analysis(sid, s, c, src, job, track_prog)
                 db.update("clips", c["id"], {"status": "rendering"})
                 emit(sid, "clip", id=c["id"], status="rendering")
             thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job,
                                 style=styles.get(c["caption_style_id"]), analysis=analysis,
-                                watermark=watermark_settings())
+                                watermark=watermark_settings(), on_progress=enc_prog)
             if old and old != str(out) and Path(old).exists():
                 Path(old).unlink(missing_ok=True)
             db.update("clips", c["id"], {"status": "done", "output_path": str(out), "thumb_path": str(thumb)})
@@ -267,13 +311,14 @@ def _run_render(sid, clip_ids, job: Job):
             db.update("clips", c["id"], {"status": "failed", "error": str(e)[-500:]})
             emit(sid, "clip", id=c["id"], status="failed", error=str(e)[-300:])
             log_line(sid, f"Klip {c['rank']} gagal: {e}")
-    emit(sid, "progress", stage="render", pct=100)
+    progress(sid, "render", 100, f"{len(clips)} klip selesai", force=True)
     db.update("sessions", sid, {"stage": "done", "error": f"{failed} klip gagal" if failed else None})
     emit(sid, "stage", stage="done", failed=failed)
     log_line(sid, "Selesai.")
 
 
 TRACKED = {"face916", "square", "gaming916"}
+STAGE_DETAIL = {"fetch": "Mengunduh video", "transcribe": "Mengubah suara jadi teks", "detect": "AI membaca transkrip"}
 WATERMARK_IMG = DATA / "watermark.png"
 
 
@@ -283,7 +328,7 @@ def watermark_settings():
     return wm
 
 
-def _analysis(sid, s, c, src, job):
+def _analysis(sid, s, c, src, job, on_progress=None):
     """Ambil analisis wajah dari cache, atau hitung (status klip: tracking)."""
     row = db.one("SELECT path FROM crop_tracks WHERE clip_id=?", (c["id"],))
     if row:
@@ -292,7 +337,8 @@ def _analysis(sid, s, c, src, job):
     emit(sid, "clip", id=c["id"], status="tracking")
     t0 = time.time()
     try:
-        a = analyze(src, c["start_s"], c["end_s"] - c["start_s"], s["width"], s["height"], job, s["fps"] or 30.0)
+        a = analyze(src, c["start_s"], c["end_s"] - c["start_s"], s["width"], s["height"], job, s["fps"] or 30.0,
+                    on_progress)
     except Cancelled:
         raise
     except Exception as e:  # noqa: BLE001  tracking gagal: render tetap jalan dengan crop tengah

@@ -136,7 +136,8 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
             f"Durasi tiap klip harus {lo}-{hi} detik. Pilih maksimal {per_win} klip terbaik dari bagian ini.\n"
             f"Nomor baris valid: {idxs[0]} sampai {idxs[-1]}.\n\nTRANSKRIP:\n{lines}"
         )
-        emit("progress", stage="detect", pct=round(wi * 100 / len(wins), 1))
+        emit("progress", stage="detect", pct=round(wi * 100 / len(wins), 1),
+             detail=f"AI membaca transkrip bagian {wi + 1} dari {len(wins)}" if len(wins) > 1 else None)
         raw = chat(provider, model, key, SYSTEM, user, job)
         try:
             data = parse_json(raw)

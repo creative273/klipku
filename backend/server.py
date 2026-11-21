@@ -27,7 +27,7 @@ import styles  # noqa: E402
 from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET  # noqa: E402
 from server_util import first_line, run  # noqa: E402
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -331,6 +331,30 @@ async def session_events(sid: str, since: int = 0):
 def cancel_session(sid: str):
     pipeline.cancel(sid)
     return {"ok": True}
+
+
+@app.post("/sessions/{sid}/retry")
+def retry_session(sid: str):
+    s = db.one("SELECT stage FROM sessions WHERE id=?", (sid,))
+    if not s:
+        raise HTTPException(404, "sesi tidak ada")
+    if s["stage"] not in ("error", "cancelled"):
+        raise HTTPException(400, "Sesi ini tidak sedang gagal atau dibatalkan")
+    pipeline.retry(sid)
+    return {"ok": True}
+
+
+@app.get("/active")
+def active_session():
+    """Sesi yang sedang berjalan (untuk indikator di sidebar)."""
+    s = db.one("SELECT id, title, source_url, stage FROM sessions WHERE stage IN "
+               "('queued','fetch','transcribe','detect','render') ORDER BY updated_at DESC LIMIT 1")
+    if not s:
+        return {"session": None}
+    last = next((e for e in reversed(pipeline._events.get(s["id"], [])) if e["kind"] == "progress"), None)
+    s["pct"] = last["pct"] if last and last["stage"] == s["stage"] else 0
+    s["detail"] = last.get("detail") if last and last["stage"] == s["stage"] else None
+    return {"session": s}
 
 
 @app.post("/sessions/{sid}/render-all")

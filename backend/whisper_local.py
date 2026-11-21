@@ -158,9 +158,11 @@ def transcribe_offline(src, duration, name, language, job, emit) -> dict:
             t = (w.word or "").strip()
             if t:
                 words.append({"t": t, "s": round(w.start, 3), "e": round(w.end, 3)})
-        if sg.end - last > 5 and duration:
+        if sg.end - last > 2 and duration:
             last = sg.end
-            emit("progress", stage="transcribe", pct=round(min(99, sg.end * 100 / duration), 1))
+            emit("progress", stage="transcribe", pct=round(min(99, sg.end * 100 / duration), 1),
+                 detail=f"Transkrip offline · {int(sg.end // 60)}:{int(sg.end % 60):02d} dari "
+                        f"{int(duration // 60)}:{int(duration % 60):02d}")
     if not words:
         raise RuntimeError("Transkrip kosong: tidak ada ucapan yang terdeteksi di video ini.")
     return {"engine": f"faster-whisper:{name}", "words": words, "segments": segments, "language": info.language}

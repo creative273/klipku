@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Klipku">
+  <!-- bingkai video panjang (16:9) -->
+  <rect x="58" y="146" width="396" height="222" rx="30" fill="none" stroke="#6B6B6B" stroke-width="24"/>
+  <!-- klip vertikal (9:16) yang diambil darinya -->
+  <rect x="160" y="78" width="192" height="342" rx="32" fill="#F5B301"/>
+  <!-- baris caption -->
+  <rect x="190" y="322" width="132" height="24" rx="12" fill="#141414"/>
+  <rect x="214" y="358" width="84" height="24" rx="12" fill="#141414"/>
+</svg>

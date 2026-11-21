@@ -47,6 +47,9 @@ def init():
 
 def _migrate(c):
     """Tambah kolom baru ke DB versi lama (ALTER TABLE ADD COLUMN aman dijalankan ulang)."""
+    scols = {r[1] for r in c.execute("PRAGMA table_info(sessions)")}
+    if "opts" not in scols:
+        c.execute("ALTER TABLE sessions ADD COLUMN opts TEXT NOT NULL DEFAULT '{}'")
     cols = {r[1] for r in c.execute("PRAGMA table_info(clips)")}
     if "title_overlay" not in cols:
         c.execute("ALTER TABLE clips ADD COLUMN title_overlay INTEGER NOT NULL DEFAULT 0 CHECK (title_overlay IN (0,1))")
