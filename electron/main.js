@@ -1,7 +1,7 @@
 // Klipku - proses utama Electron.
 // Menjalankan backend Python (embeddable) di 127.0.0.1 dengan port acak + token acak,
 // lalu membuka jendela UI. Tidak ada download executable saat runtime.
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const net = require('net');
@@ -95,6 +95,21 @@ function createWindow() {
 ipcMain.handle('backend:info', () => backendInfo);
 ipcMain.handle('backend:log', () => lastLog.join(''));
 ipcMain.handle('shell:openPath', (_e, p) => shell.openPath(p));
+ipcMain.handle('shell:showItem', (_e, p) => shell.showItemInFolder(p));
+ipcMain.handle('shell:openExternal', (_e, url) => {
+  if (/^https:\/\//.test(url)) return shell.openExternal(url);
+});
+ipcMain.handle('dialog:pickVideo', async () => {
+  const r = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v', 'avi'] }],
+  });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('dialog:pickFolder', async () => {
+  const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
+});
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

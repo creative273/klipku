@@ -34,6 +34,12 @@ jobs:
           $env:KLIPKU_OUTPUT = "$PWD\selftest-out"
           & .\engine\python\python.exe -c "import sys; sys.argv=['x']; import server; from fastapi.testclient import TestClient; c=TestClient(server.app); r=c.post('/selftest').json(); [print(('OK  ' if x['ok'] else 'FAIL'), x['test'], '|', x['detail']) for x in r['results']]; sys.exit(0 if r['ok'] else 1)"
 
+      - name: Smoke test pipeline (AI palsu, path aneh, semua format)
+        shell: pwsh
+        run: |
+          $env:KLIPKU_ENGINE = "$PWD\engine"
+          & .\engine\python\python.exe scripts\smoke_pipeline.py "$env:RUNNER_TEMP"
+
       - name: Install npm
         run: npm ci
 

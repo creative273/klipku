@@ -66,7 +66,7 @@ if ((Get-Item $yunet).Length -lt 100000) { throw 'model YuNet tidak valid (kemun
 
 # 6. kode backend
 New-Item -ItemType Directory -Force "$engine\backend" | Out-Null
-Copy-Item "$root\backend\*.py" "$engine\backend\"
+Copy-Item "$root\backend\*.py", "$root\backend\*.sql" "$engine\backend\"
 
 # 7. uji cepat: import semua paket dengan python yang akan dibundel
 & "$engine\python\python.exe" -c "import fastapi, uvicorn, yt_dlp, cv2, keyring, numpy; print('imports ok', cv2.__version__, yt_dlp.version.__version__)"

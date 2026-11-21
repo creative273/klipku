@@ -2,37 +2,149 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data: http://127.0.0.1:*; media-src http://127.0.0.1:*; style-src 'self'; script-src 'self'">
 <title>Klipku</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin: 0; font: 15px/1.5 system-ui, "Segoe UI", sans-serif; background: #111; color: #eee; }
-  main { max-width: 760px; margin: 40px auto; padding: 0 24px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  p.sub { color: #9a9a9a; margin: 0 0 24px; }
-  button { font: inherit; padding: 10px 18px; border-radius: 8px; border: 0; background: #f5b301; color: #111; font-weight: 600; cursor: pointer; }
-  button:disabled { opacity: .5; cursor: default; }
-  button.ghost { background: #2a2a2a; color: #eee; }
-  table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-  td { padding: 8px 6px; border-bottom: 1px solid #262626; vertical-align: top; }
-  td:first-child { width: 36px; }
-  .ok { color: #4ade80; } .bad { color: #f87171; } .muted { color: #9a9a9a; font-size: 13px; word-break: break-all; }
-  pre { background: #1a1a1a; padding: 12px; border-radius: 8px; max-height: 220px; overflow: auto; font-size: 12px; }
-  .row { display: flex; gap: 10px; }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
+<nav class="side">
+  <div class="brand">Klipku</div>
+  <button class="nav on" data-view="create">Buat klip</button>
+  <button class="nav" data-view="history">History</button>
+  <button class="nav" data-view="settings">Pengaturan</button>
+  <div class="ver" id="ver"></div>
+</nav>
+
 <main>
-  <h1>Klipku · tes mesin</h1>
-  <p class="sub">Milestone 0. Cek semua alat yang ikut di installer jalan dengan Windows Defender tetap aktif.</p>
-  <div class="row">
-    <button id="run" disabled>Jalankan tes</button>
-    <button id="open" class="ghost" disabled>Buka folder hasil</button>
-  </div>
-  <table id="health"></table>
-  <table id="results"></table>
-  <details><summary class="muted">Log backend</summary><pre id="log"></pre></details>
+  <!-- S01 + S02 -->
+  <section id="view-create" class="view on">
+    <h1>Buat klip</h1>
+    <div class="card">
+      <label class="lbl" for="url">Link video</label>
+      <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+      <div id="drop" class="drop" tabindex="0">
+        <span id="drop-text">atau tarik file video ke sini (MP4, MOV, MKV)</span>
+        <button id="pick" class="ghost sm" type="button">Pilih file</button>
+        <button id="clear-file" class="ghost sm hidden" type="button">Hapus</button>
+      </div>
+    </div>
+
+    <div class="card grid2">
+      <div>
+        <span class="lbl">Format</span>
+        <div class="chips" id="format">
+          <button data-v="face916" class="on">Face 9:16</button>
+          <button data-v="gaming916">Gaming</button>
+          <button data-v="blurbg916">Blur BG</button>
+          <button data-v="square">Square</button>
+          <button data-v="landscape">Landscape</button>
+        </div>
+        <p class="hint" id="format-hint"></p>
+      </div>
+      <div>
+        <span class="lbl">Durasi klip</span>
+        <div class="chips" id="duration">
+          <button data-v="30">30 dtk</button>
+          <button data-v="60">60 dtk</button>
+          <button data-v="30-60" class="on">30–60 dtk</button>
+        </div>
+      </div>
+      <div>
+        <label class="lbl" for="count">Jumlah klip</label>
+        <input id="count" type="number" min="1" max="10" value="5">
+      </div>
+      <div>
+        <label class="lbl" for="res">Resolusi</label>
+        <select id="res">
+          <option value="720p">720p</option>
+          <option value="1080p" selected>1080p</option>
+          <option value="2k">2K</option>
+          <option value="4k">4K</option>
+        </select>
+      </div>
+      <div id="split-box" class="hidden">
+        <label class="lbl" for="split">Tinggi bagian muka: <b id="split-val">40%</b></label>
+        <input id="split" type="range" min="25" max="60" step="5" value="40">
+      </div>
+      <div>
+        <span class="lbl">Subtitle di video</span>
+        <label class="switch"><input id="subs" type="checkbox" checked><span></span> Tampilkan</label>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="run" class="primary">Run pipeline</button>
+      <span class="hint" id="run-note"></span>
+    </div>
+  </section>
+
+  <!-- S03 + S04 -->
+  <section id="view-session" class="view">
+    <div class="row between">
+      <div>
+        <button class="ghost sm" id="back">← Kembali</button>
+        <h1 id="s-title">Sesi</h1>
+        <p class="hint" id="s-meta"></p>
+      </div>
+      <div class="row">
+        <button class="ghost" id="s-folder">Buka folder hasil</button>
+        <button class="ghost" id="s-render">Render ulang semua</button>
+        <button class="danger" id="s-cancel">Batalkan</button>
+      </div>
+    </div>
+    <div class="card" id="progress">
+      <ol class="steps" id="steps">
+        <li data-s="fetch">Ambil video</li>
+        <li data-s="transcribe">Transkrip</li>
+        <li data-s="detect">Cari momen</li>
+        <li data-s="render">Render</li>
+      </ol>
+      <div class="bar"><div id="bar-fill"></div></div>
+      <p class="err hidden" id="s-error"></p>
+      <details><summary class="hint">Log</summary><pre id="s-log"></pre></details>
+    </div>
+    <div class="gallery" id="gallery"></div>
+  </section>
+
+  <!-- S11 -->
+  <section id="view-history" class="view">
+    <h1>History</h1>
+    <div id="history-list" class="list"></div>
+  </section>
+
+  <!-- S12 + S13 -->
+  <section id="view-settings" class="view">
+    <h1>Pengaturan</h1>
+    <div class="card">
+      <h2>AI</h2>
+      <div class="grid2">
+        <div>
+          <label class="lbl" for="provider">Provider</label>
+          <select id="provider"></select>
+        </div>
+        <div>
+          <label class="lbl" for="model">Model</label>
+          <input id="model" list="models">
+          <datalist id="models"></datalist>
+        </div>
+      </div>
+      <p class="hint">Transkrip memakai Groq Whisper, jadi key Groq wajib diisi walau provider AI-nya Gemini atau OpenRouter.</p>
+      <div id="keys"></div>
+    </div>
+    <div class="card">
+      <h2>Output</h2>
+      <span class="lbl">Folder hasil</span>
+      <div class="row"><code id="outdir"></code><button class="ghost sm" id="pick-out">Ganti folder</button></div>
+    </div>
+    <div class="card">
+      <h2>Tes mesin</h2>
+      <p class="hint">Cek ffmpeg, yt-dlp, deteksi wajah, dan penyimpanan key jalan di laptop ini.</p>
+      <button class="ghost" id="selftest">Jalankan tes</button>
+      <table id="selftest-out"></table>
+    </div>
+  </section>
 </main>
+<div id="toast" class="toast hidden"></div>
 <script src="app.js"></script>
 </body>
 </html>
