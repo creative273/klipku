@@ -41,7 +41,9 @@ Get-File 'https://bootstrap.pypa.io/get-pip.py' "$dl\get-pip.py"
 if ($LASTEXITCODE -ne 0) { throw 'get-pip gagal' }
 & "$engine\python\python.exe" -m pip install --no-warn-script-location --only-binary=:all: -r "$root\backend\requirements.txt"
 if ($LASTEXITCODE -ne 0) { throw 'pip install gagal' }
-# buang exe launcher pip (Scripts\*.exe) - tidak dipakai app, dan sering dicurigai antivirus
+# buang pip/setuptools/wheel + folder Scripts: membawa exe launcher (t64.exe, cli.exe, dll)
+# yang sering dicurigai antivirus. Update yt-dlp di app nanti memakai unzip wheel, bukan pip.
+& "$engine\python\python.exe" -m pip uninstall -y pip setuptools wheel
 Remove-Item "$engine\python\Scripts" -Recurse -Force -ErrorAction SilentlyContinue
 
 # 3. ffmpeg + ffprobe (gyan.dev essentials, ada libass)
@@ -73,7 +75,7 @@ if ($LASTEXITCODE -ne 0) { throw 'import test gagal' }
 # 8. cari executable di engine selain yang memang diharapkan
 $expected = @('python.exe','pythonw.exe','ffmpeg.exe','ffprobe.exe','deno.exe')
 $extra = Get-ChildItem $engine -Recurse -Filter *.exe | Where-Object { $expected -notcontains $_.Name }
-if ($extra) { Write-Warning ("exe tambahan: " + ($extra.FullName -join ', ')) }
+if ($extra) { throw ("exe tambahan di bundle: " + ($extra.FullName -join ', ')) }
 
 $size = (Get-ChildItem $engine -Recurse | Measure-Object Length -Sum).Sum / 1MB
 Write-Host ("engine siap: {0:N0} MB" -f $size)
