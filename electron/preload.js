@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('klipku', {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pickVideo: () => ipcRenderer.invoke('dialog:pickVideo'),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
+  pickImage: () => ipcRenderer.invoke('dialog:pickImage'),
+  relaunch: () => ipcRenderer.invoke('app:relaunch'),
   // path asli file yang di-drag ke jendela (Electron 32+)
   pathForFile: (file) => webUtils.getPathForFile(file),
 });

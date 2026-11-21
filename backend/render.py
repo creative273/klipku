@@ -148,16 +148,35 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
 
 
 def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work: Path, job, style=None,
-                analysis=None):
+                analysis=None, watermark=None):
+    """watermark: {"mode": "off|text|image", "text", "image" (path), "position", "opacity", "size"}"""
     fmt = clip["format"]
     W, H = out_size(fmt, clip["resolution"])
     graph, cap_pos = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40), analysis)
     start, end = clip["start_s"], clip["end_s"]
     dur = end - start
 
+    wm = watermark or {}
+    extra_inputs = []
+    if wm.get("mode") == "image" and wm.get("image") and Path(wm["image"]).exists():
+        ww = even(W * float(wm.get("size", 0.18)))
+        op = max(0.05, min(1.0, float(wm.get("opacity", 0.85))))
+        # tinggi logo belum diketahui sebelum scale: pakai overlay dengan ekspresi ukuran (w/h = ukuran logo)
+        m = round(W * 0.03)
+        pos = wm.get("position", "tr")
+        ox = f"{m}" if pos in ("tl", "bl") else f"W-w-{m}"
+        oy = f"{m}" if pos in ("tl", "tr") else f"H-h-{m}"
+        graph += (f";[1:v]scale={ww}:-2:flags=lanczos,format=rgba,colorchannelmixer=aa={op:.2f}[wm];"
+                  f"[base][wm]overlay={ox}:{oy}:format=auto[basew]")
+        base_label = "basew"
+        extra_inputs = ["-loop", "1", "-i", str(wm["image"])]
+    else:
+        base_label = "base"
+    wm_text = wm.get("text", "").strip() if wm.get("mode") == "text" else ""
+
     subs = bool(clip.get("subtitle_on", 1))
     title = clip.get("hook_title") if clip.get("title_overlay") else None
-    if subs or title:
+    if subs or title or wm_text:
         import json
 
         # judul: Gaming di atas panel facecam, format lain 10% dari atas
@@ -166,19 +185,21 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
         ass.write_text(
             build_ass(words, start, end, W, H, style=style,
                       overrides=json.loads(clip.get("caption_overrides") or "{}"), positions=cap_pos,
-                      subtitles=subs, title=title, title_y=title_y),
+                      subtitles=subs, title=title, title_y=title_y,
+                      watermark_text=wm_text, watermark_pos=wm.get("position", "tr"),
+                      watermark_opacity=float(wm.get("opacity", 0.85))),
             encoding="utf-8",
         )
         # ffmpeg dijalankan dengan cwd=work, jadi ASS & fontsdir dirujuk relatif:
         # tidak ada titik dua / apostrof / spasi dari path user di dalam filtergraph.
         fontsdir = f":fontsdir={rel_filter_path(FONTS, work)}" if FONTS.exists() else ""
-        graph += f";[base]ass={ass.name}{fontsdir}[v]"
+        graph += f";[{base_label}]ass={ass.name}{fontsdir}[v]"
     else:
-        graph += ";[base]null[v]"
+        graph += f";[{base_label}]null[v]"
 
     tmp = out_path.with_name(out_path.stem + ".part.mp4")
     try:
-        _encode(job, src, start, dur, graph, tmp, work)
+        _encode(job, src, start, dur, graph, tmp, work, extra_inputs)
     except BaseException:
         tmp.unlink(missing_ok=True)  # batal / gagal: jangan tinggalkan file setengah jadi
         raise
@@ -190,10 +211,10 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
     return thumb
 
 
-def _encode(job, src, start, dur, graph, tmp, work):
+def _encode(job, src, start, dur, graph, tmp, work, extra_inputs=()):
     job.run([
-        FFMPEG, "-hide_banner", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src,
-        "-filter_complex", graph, "-map", "[v]", "-map", "0:a:0",
+        FFMPEG, "-hide_banner", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src, *extra_inputs,
+        "-filter_complex", graph, "-map", "[v]", "-map", "0:a:0", "-shortest",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp,
     ], cwd=work)

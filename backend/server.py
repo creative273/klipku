@@ -16,14 +16,18 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import config
-import db
-import keys
-import pipeline
-import styles
-from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET
-from server_util import first_line, run
+import ytdlp_update
 
-VERSION = "0.3.0"
+ytdlp_update.activate()  # harus sebelum yt_dlp di-import di mana pun
+
+import db  # noqa: E402
+import keys  # noqa: E402
+import pipeline  # noqa: E402
+import styles  # noqa: E402
+from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET  # noqa: E402
+from server_util import first_line, run  # noqa: E402
+
+VERSION = "0.4.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -87,7 +91,18 @@ def selftest_route():
 
 # ---------- settings ----------
 
+class WatermarkIn(BaseModel):
+    mode: str = "off"
+    text: str = ""
+    position: str = "tr"
+    opacity: float = 0.85
+    size: float = 0.18
+
+
 class SettingsIn(BaseModel):
+    transcribe_mode: str | None = None
+    whisper_model: str | None = None
+    watermark: WatermarkIn | None = None
     caption_style_id: str | None = None
     provider: str | None = None
     model: str | None = None
@@ -99,8 +114,11 @@ class SettingsIn(BaseModel):
 
 @app.get("/settings")
 def get_settings():
+    import whisper_local
     st = db.get_settings()
     st["output_dir_effective"] = str(pipeline.output_root())
+    st["watermark_image"] = pipeline.WATERMARK_IMG.exists()
+    st["whisper"] = whisper_local.status()
     return {"settings": st, "keys": keys.status(PROVIDERS), "providers": PROVIDERS}
 
 
@@ -109,6 +127,19 @@ def put_settings(body: SettingsIn):
     data = body.model_dump(exclude_unset=True)
     if "provider" in data and data["provider"] not in PROVIDERS:
         raise HTTPException(400, "provider tidak dikenal")
+    if "transcribe_mode" in data and data["transcribe_mode"] not in ("online", "offline"):
+        raise HTTPException(400, "mode transkrip tidak dikenal")
+    if "whisper_model" in data:
+        import whisper_local
+        if data["whisper_model"] not in whisper_local.MODELS:
+            raise HTTPException(400, "model tidak dikenal")
+    if body.watermark is not None:
+        data["watermark"] = w = body.watermark.model_dump()  # isi default untuk field yang tidak dikirim
+        if w["mode"] not in ("off", "text", "image") or w["position"] not in ("tl", "tr", "bl", "br"):
+            raise HTTPException(400, "pengaturan watermark tidak valid")
+        w["opacity"] = max(0.05, min(1.0, float(w["opacity"])))
+        w["size"] = max(0.05, min(0.5, float(w["size"])))
+        w["text"] = (w["text"] or "")[:60]
     if data.get("output_dir"):
         p = Path(data["output_dir"])
         try:
@@ -132,6 +163,70 @@ def put_key(provider: str, body: KeyIn):
         raise HTTPException(404, "provider tidak dikenal")
     keys.set_(provider, body.key)
     return {"ok": True, "keys": keys.status(PROVIDERS)}
+
+
+class PathIn(BaseModel):
+    path: str
+
+
+@app.put("/settings/watermark-image")
+def put_watermark_image(body: PathIn):
+    """Salin gambar logo ke folder data sebagai PNG (ffmpeg mengonversi JPG/WEBP/PNG)."""
+    src = Path(body.path)
+    if not src.is_file():
+        raise HTTPException(400, "File gambar tidak ditemukan")
+    ok, out = run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-frames:v", "1",
+                   "-vf", "scale='min(1200,iw)':-2", pipeline.WATERMARK_IMG])
+    if not ok:
+        raise HTTPException(400, f"Gambar tidak bisa dibaca: {out[-200:]}")
+    return {"ok": True}
+
+
+@app.get("/settings/watermark-image")
+def get_watermark_image():
+    if not pipeline.WATERMARK_IMG.exists():
+        raise HTTPException(404, "belum ada logo")
+    return FileResponse(pipeline.WATERMARK_IMG, media_type="image/png")
+
+
+@app.post("/models/whisper/{name}/download")
+def whisper_download(name: str):
+    import whisper_local
+    try:
+        whisper_local.start_download(name)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from None
+    return whisper_local.status()
+
+
+@app.delete("/models/whisper/{name}")
+def whisper_delete(name: str):
+    import whisper_local
+    whisper_local.delete(name)
+    return whisper_local.status()
+
+
+@app.get("/models/whisper")
+def whisper_status():
+    import whisper_local
+    return whisper_local.status()
+
+
+@app.get("/engine/ytdlp")
+def ytdlp_status():
+    try:
+        latest, _ = ytdlp_update.check_latest()
+    except Exception:  # noqa: BLE001
+        latest = None
+    return {"active": ytdlp_update.active_version(), "latest": latest}
+
+
+@app.post("/engine/update-ytdlp")
+def ytdlp_do_update():
+    try:
+        return ytdlp_update.update()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Update yt-dlp gagal: {e}") from None
 
 
 @app.post("/settings/test-key/{provider}")

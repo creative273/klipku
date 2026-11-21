@@ -14,7 +14,7 @@ from pathlib import Path
 
 import db
 import keys
-from config import DEFAULT_OUTPUT
+from config import DATA, DEFAULT_OUTPUT
 from detect import detect
 from fetch import download, safe_name
 from proc import Cancelled, Job, probe
@@ -76,7 +76,8 @@ def work_dir(session_id, output_dir) -> Path:
 
 
 def result_dir(session) -> Path:
-    created = session["created_at"][:10]
+    # tanggal lokal laptop (created_at disimpan UTC)
+    created = datetime.fromisoformat(session["created_at"].replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d")
     return Path(session["output_dir"]) / f"{created} {safe_name(session['title'] or 'video', 50)} ({session['id'][:4]})"
 
 
@@ -96,7 +97,7 @@ def create_session(params: dict) -> dict:
             sid, src_type, params.get("url"), params.get("file_path"),
             Path(params["file_path"]).stem if src_type == "file" else None,
             params.get("provider") or st["provider"], params.get("model") or st["model"],
-            "online", int(params.get("clip_count") or st["clip_count"]),
+            params.get("transcribe_mode") or st["transcribe_mode"], int(params.get("clip_count") or st["clip_count"]),
             params.get("clip_duration") or st["clip_duration"], "queued", str(out),
             params.get("language"), db.now(), db.now(),
         ),
@@ -185,7 +186,12 @@ def _run_pipeline(sid, opts, job: Job):
 
     # 2. transcribe
     _stage(sid, "transcribe")
-    tr = transcribe_online(src, info["duration"], work, keys.get("groq"), s["language"], job, ev)
+    if s["transcribe_mode"] == "offline":
+        from whisper_local import transcribe_offline
+        tr = transcribe_offline(src, info["duration"], db.get_settings().get("whisper_model") or "small",
+                                s["language"], job, ev)
+    else:
+        tr = transcribe_online(src, info["duration"], work, keys.get("groq"), s["language"], job, ev)
     db.exec_("INSERT OR REPLACE INTO transcripts(session_id, engine, words, segments, created_at) VALUES(?,?,?,?,?)",
              (sid, tr["engine"], json.dumps(tr["words"]), json.dumps(tr["segments"]), db.now()))
     if tr.get("language") and not s["language"]:
@@ -247,7 +253,8 @@ def _run_render(sid, clip_ids, job: Job):
                 db.update("clips", c["id"], {"status": "rendering"})
                 emit(sid, "clip", id=c["id"], status="rendering")
             thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job,
-                                style=styles.get(c["caption_style_id"]), analysis=analysis)
+                                style=styles.get(c["caption_style_id"]), analysis=analysis,
+                                watermark=watermark_settings())
             if old and old != str(out) and Path(old).exists():
                 Path(old).unlink(missing_ok=True)
             db.update("clips", c["id"], {"status": "done", "output_path": str(out), "thumb_path": str(thumb)})
@@ -267,6 +274,13 @@ def _run_render(sid, clip_ids, job: Job):
 
 
 TRACKED = {"face916", "square", "gaming916"}
+WATERMARK_IMG = DATA / "watermark.png"
+
+
+def watermark_settings():
+    wm = dict(db.get_settings().get("watermark") or {})
+    wm["image"] = str(WATERMARK_IMG)
+    return wm
 
 
 def _analysis(sid, s, c, src, job):

@@ -207,8 +207,70 @@
           <datalist id="models"></datalist>
         </div>
       </div>
-      <p class="hint">Transkrip memakai Groq Whisper, jadi key Groq wajib diisi walau provider AI-nya Gemini atau OpenRouter.</p>
+      <p class="hint">Transkrip mode online memakai Groq Whisper, jadi key Groq wajib diisi kalau transkrip online, walau provider AI-nya Gemini atau OpenRouter.</p>
       <div id="keys"></div>
+    </div>
+    <div class="card">
+      <h2>Transkrip</h2>
+      <div class="grid2">
+        <div>
+          <label class="lbl" for="tr-mode">Mode</label>
+          <select id="tr-mode">
+            <option value="online">Online (Groq, cepat, butuh internet + key)</option>
+            <option value="offline">Offline (di laptop ini, tanpa key)</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="tr-model">Model offline</label>
+          <select id="tr-model"></select>
+        </div>
+      </div>
+      <div id="tr-models" class="models"></div>
+      <p class="hint">Model offline diunduh sekali. Large v3 Turbo lebih akurat untuk bahasa Indonesia tapi lebih lambat di CPU.</p>
+    </div>
+    <div class="card">
+      <h2>Watermark</h2>
+      <div class="grid2">
+        <div>
+          <label class="lbl" for="wm-mode">Jenis</label>
+          <select id="wm-mode">
+            <option value="off">Tidak ada</option>
+            <option value="image">Logo (gambar)</option>
+            <option value="text">Teks</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="wm-pos">Posisi</label>
+          <select id="wm-pos">
+            <option value="tl">Kiri atas</option>
+            <option value="tr">Kanan atas</option>
+            <option value="bl">Kiri bawah</option>
+            <option value="br">Kanan bawah</option>
+          </select>
+        </div>
+        <div class="wm-text">
+          <label class="lbl" for="wm-text">Teks</label>
+          <input id="wm-text" maxlength="60" placeholder="@akunkamu">
+        </div>
+        <div class="wm-img">
+          <span class="lbl">Logo</span>
+          <div class="row"><img id="wm-preview" class="wm-prev hidden" alt="Logo watermark"><button class="ghost sm" id="wm-pick">Pilih gambar</button></div>
+        </div>
+        <div>
+          <label class="lbl" for="wm-op">Opasitas: <b id="wm-op-val"></b></label>
+          <input id="wm-op" type="range" min="10" max="100" step="5">
+        </div>
+        <div class="wm-img">
+          <label class="lbl" for="wm-size">Lebar logo: <b id="wm-size-val"></b></label>
+          <input id="wm-size" type="range" min="5" max="50" step="1">
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="ghost" id="wm-save">Simpan watermark</button><span class="hint">Berlaku untuk render berikutnya.</span></div>
+    </div>
+    <div class="card">
+      <h2>yt-dlp</h2>
+      <p class="hint">YouTube sering berubah. Kalau download mulai gagal, update yt-dlp di sini lalu buka ulang app.</p>
+      <div class="row"><span id="yt-ver" class="hint">Mengecek versi…</span><button class="ghost sm" id="yt-update">Update yt-dlp</button></div>
     </div>
     <div class="card">
       <h2>Output</h2>

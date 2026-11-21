@@ -92,6 +92,8 @@ DEFAULT_SETTINGS = {
     "clip_duration": "30-60",
     "resolution": "1080p",
     "caption_style_id": "builtin-tegas-kuning",
+    "whisper_model": "small",
+    "watermark": {"mode": "off", "text": "", "position": "tr", "opacity": 0.85, "size": 0.18},
 }
 
 

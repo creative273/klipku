@@ -150,11 +150,13 @@ async function refreshRunNote() {
     settingsCache = st;
     const p = st.settings.provider;
     const missing = [];
-    if (!st.keys.groq) missing.push('Groq (untuk transkrip)');
+    const offline = st.settings.transcribe_mode === 'offline';
+    if (!offline && !st.keys.groq) missing.push('Groq (untuk transkrip)');
+    if (offline && !st.settings.whisper[st.settings.whisper_model].installed) missing.push('model transkrip offline (unduh di Pengaturan)');
     if (p !== 'groq' && !st.keys[p]) missing.push(st.providers[p].label);
     $('run-note').textContent = missing.length
-      ? `Key belum diisi: ${missing.join(', ')}. Isi di Pengaturan.`
-      : `AI: ${st.providers[p].label} · ${st.settings.model}`;
+      ? `Belum siap: ${missing.join(', ')}. Lengkapi di Pengaturan.`
+      : `AI: ${st.providers[p].label} · ${st.settings.model} · Transkrip ${offline ? 'offline' : 'online'}`;
   } catch { /* backend belum siap */ }
 }
 
@@ -316,6 +318,9 @@ async function loadSettings() {
   let st;
   try { st = await api('/settings'); } catch (e) { return toast(e.message, true); }
   settingsCache = st;
+  fillTranscribe(st.settings);
+  fillWatermark(st.settings);
+  loadYtdlp();
   const prov = $('provider');
   prov.innerHTML = '';
   for (const [k, p] of Object.entries(st.providers)) prov.append(el('option', { value: k, selected: k === st.settings.provider }, p.label));
@@ -685,6 +690,128 @@ async function edSave(render) {
 $('ed-save').onclick = () => edSave(false);
 $('ed-render').onclick = () => edSave(true);
 $('ed-back').onclick = () => openSession(ED.clip.session_id);
+
+// ---------- Pengaturan: transkrip offline ----------
+
+let modelTimer = null;
+function fillTranscribe(st) {
+  $('tr-mode').value = st.transcribe_mode || 'online';
+  const sel = $('tr-model');
+  sel.innerHTML = '';
+  Object.entries(st.whisper).forEach(([k, m]) => sel.append(el('option', { value: k, selected: k === st.whisper_model }, m.label)));
+  renderModels(st.whisper);
+}
+
+function renderModels(ws) {
+  const box = $('tr-models');
+  box.innerHTML = '';
+  let busy = false;
+  for (const [k, m] of Object.entries(ws)) {
+    let right;
+    if (m.installed) {
+      right = el('span', { class: 'row' }, el('span', { class: 'ok' }, 'terpasang'),
+        el('button', { class: 'ghost sm', onclick: async () => {
+          if (!confirm(`Hapus model ${m.label}?`)) return;
+          renderModels(await api(`/models/whisper/${k}`, { method: 'DELETE' }));
+        } }, 'Hapus'));
+    } else if (m.downloading) {
+      busy = true;
+      const bar = el('div', { class: 'bar' }, el('div', { style: `width:${m.pct}%` }));
+      right = el('span', { class: 'row' }, bar, el('span', { class: 'hint' }, `${m.pct}%`));
+    } else {
+      right = el('span', { class: 'row' }, m.error ? el('span', { class: 'bad hint' }, m.error) : null,
+        el('button', { class: 'ghost sm', onclick: async () => {
+          renderModels(await api(`/models/whisper/${k}/download`, { method: 'POST' }));
+        } }, 'Unduh'));
+    }
+    box.append(el('div', { class: 'model' }, el('span', { class: 'nm' }, m.label), right));
+  }
+  clearTimeout(modelTimer);
+  if (busy) modelTimer = setTimeout(async () => renderModels(await api('/models/whisper')), 1500);
+}
+
+$('tr-mode').addEventListener('change', async () => {
+  const mode = $('tr-mode').value;
+  const st = await api('/settings', { method: 'PUT', body: { transcribe_mode: mode } });
+  const m = st.settings.whisper[st.settings.whisper_model];
+  toast(mode === 'offline' && !m.installed ? 'Mode offline aktif. Unduh modelnya dulu sebelum Run pipeline.' : 'Mode transkrip disimpan.');
+  refreshRunNote();
+});
+$('tr-model').addEventListener('change', async () => {
+  await api('/settings', { method: 'PUT', body: { whisper_model: $('tr-model').value } });
+  toast('Model offline dipilih.');
+  refreshRunNote();
+});
+
+// ---------- Pengaturan: watermark ----------
+
+function fillWatermark(st) {
+  const w = st.watermark || {};
+  $('wm-mode').value = w.mode || 'off';
+  $('wm-pos').value = w.position || 'tr';
+  $('wm-text').value = w.text || '';
+  $('wm-op').value = Math.round((w.opacity ?? 0.85) * 100);
+  $('wm-size').value = Math.round((w.size ?? 0.18) * 100);
+  const img = $('wm-preview');
+  img.classList.toggle('hidden', !st.watermark_image);
+  if (st.watermark_image) img.src = media('/settings/watermark-image') + `&v=${Date.now()}`;
+  wmUi();
+}
+function wmUi() {
+  const mode = $('wm-mode').value;
+  document.querySelectorAll('.wm-text').forEach((e) => e.classList.toggle('hidden', mode !== 'text'));
+  document.querySelectorAll('.wm-img').forEach((e) => e.classList.toggle('hidden', mode !== 'image'));
+  $('wm-op-val').textContent = `${$('wm-op').value}%`;
+  $('wm-size-val').textContent = `${$('wm-size').value}% lebar video`;
+}
+['wm-mode', 'wm-op', 'wm-size'].forEach((id) => $(id).addEventListener('input', wmUi));
+$('wm-pick').onclick = async () => {
+  const p = await K.pickImage();
+  if (!p) return;
+  try {
+    await api('/settings/watermark-image', { method: 'PUT', body: { path: p } });
+    const img = $('wm-preview');
+    img.src = media('/settings/watermark-image') + `&v=${Date.now()}`;
+    img.classList.remove('hidden');
+    toast('Logo disimpan.');
+  } catch (e) { toast(e.message, true); }
+};
+$('wm-save').onclick = async () => {
+  const mode = $('wm-mode').value;
+  if (mode === 'text' && !$('wm-text').value.trim()) return toast('Isi teks watermark dulu.', true);
+  if (mode === 'image' && $('wm-preview').classList.contains('hidden')) return toast('Pilih gambar logo dulu.', true);
+  try {
+    await api('/settings', { method: 'PUT', body: { watermark: {
+      mode, text: $('wm-text').value.trim(), position: $('wm-pos').value,
+      opacity: Number($('wm-op').value) / 100, size: Number($('wm-size').value) / 100,
+    } } });
+    toast(mode === 'off' ? 'Watermark dimatikan.' : 'Watermark disimpan.');
+  } catch (e) { toast(e.message, true); }
+};
+
+// ---------- Pengaturan: yt-dlp ----------
+
+async function loadYtdlp() {
+  $('yt-ver').textContent = 'Mengecek versi…';
+  try {
+    const r = await api('/engine/ytdlp');
+    $('yt-ver').textContent = r.latest
+      ? (r.active === r.latest ? `Versi ${r.active} (terbaru)` : `Versi ${r.active}, terbaru ${r.latest}`)
+      : `Versi ${r.active} (tidak bisa cek versi terbaru)`;
+  } catch { $('yt-ver').textContent = 'Versi tidak diketahui'; }
+}
+$('yt-update').onclick = async () => {
+  const b = $('yt-update');
+  b.disabled = true; b.textContent = 'Mengupdate…';
+  try {
+    const r = await api('/engine/update-ytdlp', { method: 'POST' });
+    if (!r.updated) toast(`yt-dlp sudah versi terbaru (${r.latest}).`);
+    else if (confirm(`yt-dlp ${r.latest} terpasang. Buka ulang Klipku sekarang supaya dipakai?`)) K.relaunch();
+    else toast('Update berlaku setelah Klipku dibuka ulang.');
+  } catch (e) { toast(e.message, true); }
+  b.disabled = false; b.textContent = 'Update yt-dlp';
+  loadYtdlp();
+};
 
 // ---------- start ----------
 

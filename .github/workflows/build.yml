@@ -40,6 +40,18 @@ jobs:
           $env:KLIPKU_ENGINE = "$PWD\engine"
           & .\engine\python\python.exe scripts\smoke_pipeline.py "$env:RUNNER_TEMP"
 
+      - name: Tes transkrip offline (model tiny + suara SAPI)
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $sp = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $wav = "$env:RUNNER_TEMP\speech.wav"
+          $sp.SetOutputToWaveFile($wav)
+          $sp.Speak("Hello everyone. This is a short test of the offline transcription.")
+          $sp.Dispose()
+          $env:KLIPKU_ENGINE = "$PWD\engine"
+          & .\engine\python\python.exe scripts\test_offline.py $wav
+
       - name: Install npm
         run: npm ci
 

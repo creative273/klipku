@@ -52,7 +52,8 @@ def group_words(words, max_words):
 
 
 def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=None, positions=None,
-              subtitles=True, title=None, title_y=0.10):
+              subtitles=True, title=None, title_y=0.10, watermark_text="", watermark_pos="tr",
+              watermark_opacity=0.85):
     """words: transkrip penuh [{t,s,e}]. Kembalikan teks file ASS untuk satu klip.
 
     positions: [(s, e, y)] posisi vertikal caption (0..1) per rentang waktu klip.
@@ -98,6 +99,10 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
     title_style = (f"Style: Title,Poppins ExtraBold,{tsize},&H00111111,&H00111111,&H00FFFFFF,&H00000000,"
                    f"0,0,0,0,100,100,0,0,3,{max(2, round(16 * scale))},0,5,60,60,0,1\n")
 
+    a = f"{round((1 - max(0.05, min(1.0, watermark_opacity))) * 255):02X}"
+    wm_style = (f"Style: WM,Poppins SemiBold,{max(14, round(44 * scale))},&H{a}FFFFFF,&H{a}FFFFFF,&H{a}000000,"
+                f"&H{a}000000,0,0,0,0,100,100,0,0,1,{max(1, round(3 * scale))},0,7,0,0,0,1\n")
+
     head = (
         "[Script Info]\nScriptType: v4.00+\nWrapStyle: 0\nScaledBorderAndShadow: yes\n"
         f"PlayResX: {width}\nPlayResY: {height}\n\n"
@@ -106,7 +111,7 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
         "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
         "MarginR, MarginV, Encoding\n"
         + cap_style
-        + title_style + "\n"
+        + title_style + wm_style + "\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     lines = []
@@ -114,6 +119,13 @@ def build_ass(words, clip_start, clip_end, width, height, style=None, overrides=
         dur = min(3.0, clip_end - clip_start)
         lines.append(f"Dialogue: 1,{ass_time(0)},{ass_time(dur)},Title,,0,0,0,,"
                      f"{{\\pos({width // 2},{round(height * title_y)})\\fad(150,250)\\q0}}{clean(title.strip())}")
+    if watermark_text:
+        m = round(width * 0.03)
+        an = {"tl": 7, "tr": 9, "bl": 1, "br": 3}.get(watermark_pos, 9)
+        x = m if an in (7, 1) else width - m
+        y = m if an in (7, 9) else height - m
+        lines.append(f"Dialogue: 2,{ass_time(0)},{ass_time(clip_end - clip_start + 1)},WM,,0,0,0,,"
+                     f"{{\\an{an}\\pos({x},{y})}}{clean(watermark_text)}")
     if not subtitles:
         sel = []
     groups = group_words(sel, max(1, int(st["words_per_line"] or 3)))

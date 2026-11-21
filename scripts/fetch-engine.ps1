@@ -85,7 +85,7 @@ New-Item -ItemType Directory -Force "$engine\backend" | Out-Null
 Copy-Item "$root\backend\*.py", "$root\backend\*.sql" "$engine\backend\"
 
 # 7. uji cepat: import semua paket dengan python yang akan dibundel
-& "$engine\python\python.exe" -c "import fastapi, uvicorn, yt_dlp, cv2, keyring, numpy; print('imports ok', cv2.__version__, yt_dlp.version.__version__)"
+& "$engine\python\python.exe" -c "import fastapi, uvicorn, yt_dlp, cv2, keyring, numpy, faster_whisper, ctranslate2; print('imports ok', cv2.__version__, yt_dlp.version.__version__)"
 if ($LASTEXITCODE -ne 0) { throw 'import test gagal' }
 
 # 8. cari executable di engine selain yang memang diharapkan

@@ -106,6 +106,14 @@ ipcMain.handle('dialog:pickVideo', async () => {
   });
   return r.canceled ? null : r.filePaths[0];
 });
+ipcMain.handle('dialog:pickImage', async () => {
+  const r = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'Gambar', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+  });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('app:relaunch', () => { stopBackend(); app.relaunch(); app.exit(0); });
 ipcMain.handle('dialog:pickFolder', async () => {
   const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
   return r.canceled ? null : r.filePaths[0];
