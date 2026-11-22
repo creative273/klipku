@@ -11,6 +11,7 @@ import time
 import httpx
 
 from config import PROVIDERS
+from proc import Cancelled
 
 DURATIONS = {"30": (20, 40), "60": (45, 75), "30-60": (25, 65)}
 WINDOW_WORDS = 1800
@@ -78,6 +79,17 @@ def parse_json(text):
     return json.loads(text[i:j + 1])
 
 
+class AuthError(RuntimeError):
+    """Key ditolak: tidak ada gunanya mencoba bagian transkrip berikutnya."""
+
+
+def _err_message(r):
+    try:
+        return r.json()["error"]["message"]
+    except Exception:  # noqa: BLE001
+        return r.text[:200]
+
+
 def chat(provider, model, key, system, user, job, json_mode=True):
     p = PROVIDERS[provider]
     body = {
@@ -87,9 +99,13 @@ def chat(provider, model, key, system, user, job, json_mode=True):
     }
     if json_mode:
         body["response_format"] = {"type": "json_object"}
+    if provider == "groq" and model.startswith("openai/gpt-oss"):
+        # model reasoning: jatah token habis untuk berpikir -> jawaban kosong. Pendekkan.
+        body["reasoning_effort"] = "low"
     headers = {"Authorization": f"Bearer {key}"}
     if provider == "openrouter":
         headers["X-Title"] = "Klipku"
+    empty_retry = True
     for attempt in range(5):
         job.check()
         r = httpx.post(p["base"] + "/chat/completions", json=body, headers=headers,
@@ -98,13 +114,22 @@ def chat(provider, model, key, system, user, job, json_mode=True):
             wait = float(r.headers.get("retry-after", "15") or 15)
             time.sleep(min(max(wait, 2), 65))
             continue
-        if r.status_code == 400 and json_mode and "response_format" in r.text:
-            return chat(provider, model, key, system, user, job, json_mode=False)
         if r.status_code in (401, 403):
-            raise RuntimeError(f"API key {p['label']} ditolak. Cek di Pengaturan.")
+            raise AuthError(f"API key {p['label']} ditolak. Cek di Pengaturan.")
+        if r.status_code == 400 and json_mode and any(
+                k in r.text for k in ("json_validate_failed", "response_format", "failed_generation")):
+            # mode JSON ditolak / jawaban kosong: ulangi tanpa mode JSON, JSON dibaca manual
+            return chat(provider, model, key, system, user, job, json_mode=False)
+        if r.status_code >= 500 and attempt < 2:
+            time.sleep(3)
+            continue
         if r.status_code >= 400:
-            raise RuntimeError(f"{p['label']} error HTTP {r.status_code}: {r.text[:300]}")
-        return r.json()["choices"][0]["message"]["content"] or ""
+            raise RuntimeError(f"{p['label']} menolak permintaan (HTTP {r.status_code}): {_err_message(r)}")
+        content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+        if not content and empty_retry:
+            empty_retry = False
+            continue
+        return content
     raise RuntimeError(f"{p['label']} kena limit terus (HTTP 429). Coba model lain atau tunggu sebentar.")
 
 
@@ -130,6 +155,7 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
     wins = windows(units)
     per_win = max(2, math.ceil(clip_count * 1.5 / len(wins)) + 1)
     cands = []
+    failed = []
     for wi, idxs in enumerate(wins):
         lines = "\n".join(f"[{i}] ({fmt_time(units[i]['s'])}) {units[i]['text']}" for i in idxs)
         user = (
@@ -138,11 +164,14 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
         )
         emit("progress", stage="detect", pct=round(wi * 100 / len(wins), 1),
              detail=f"AI membaca transkrip bagian {wi + 1} dari {len(wins)}" if len(wins) > 1 else None)
-        raw = chat(provider, model, key, SYSTEM, user, job)
         try:
+            raw = chat(provider, model, key, SYSTEM, user, job)
             data = parse_json(raw)
-        except Exception:  # noqa: BLE001
-            emit("log", text=f"Jawaban AI bagian {wi + 1} tidak valid, dilewati.")
+        except (AuthError, Cancelled):
+            raise
+        except Exception as e:  # noqa: BLE001  satu bagian gagal: lewati, lanjut bagian lain
+            failed.append(str(e))
+            emit("log", text=f"Bagian {wi + 1} dari {len(wins)} dilewati: {e}")
             continue
         for c in data.get("clips", []):
             try:
@@ -172,7 +201,12 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
         if len(chosen) >= clip_count:
             break
     if not chosen:
+        if failed and len(failed) == len(wins):
+            raise RuntimeError(f"Semua bagian transkrip gagal dibaca AI. Error terakhir: {failed[-1]} "
+                               "Coba lagi, atau ganti model/provider di Pengaturan.")
         raise RuntimeError("AI tidak menemukan momen yang cocok. Coba durasi klip lain atau model lain.")
+    if failed:
+        emit("log", text=f"{len(failed)} dari {len(wins)} bagian transkrip dilewati karena error AI.")
     return chosen
 
 
