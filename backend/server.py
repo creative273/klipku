@@ -27,7 +27,7 @@ import styles  # noqa: E402
 from config import DENO, FFMPEG, PROVIDERS, TOKEN, YUNET  # noqa: E402
 from server_util import first_line, run  # noqa: E402
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
