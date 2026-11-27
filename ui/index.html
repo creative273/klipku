@@ -108,6 +108,17 @@
       </div>
     </div>
 
+    <div class="block">
+      <h2><span class="num">4</span>Fokus momen AI <span class="hint" style="font-weight:400">(opsional)</span></h2>
+      <div class="prompt-box">
+        <input id="prompt" type="text" maxlength="300" placeholder="Contoh: kumpulan dia ngomong bahasa Indonesia, momen marah, atau tips penting" autocomplete="off" aria-label="Fokus momen AI">
+        <div class="row between mt-s wrap">
+          <label class="switch" title="AI kumpulkan semua potongan singkat yang cocok sepanjang video lalu gabungkan jadi 1 klip kompilasi utuh"><input id="compile-mode" type="checkbox"><span class="sw"></span>Gabung jadi 1 klip (Kompilasi)</label>
+          <span class="hint" id="compile-hint">Kosongkan untuk cari momen viral otomatis seperti biasa.</span>
+        </div>
+      </div>
+    </div>
+
     <details class="block more">
       <summary><span id="more-sum">Durasi 30–60 dtk · 5 klip · 1080p</span><span class="hint">Ubah</span></summary>
       <div class="grid3">
@@ -277,6 +288,48 @@
                 <button type="button" class="ghost xs" id="gc-reset">Reset</button>
               </div>
               <button type="button" class="ghost sm" id="gc-apply-all">Terapkan ke semua klip sesi</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="ed-dur-panel">
+          <div class="row between">
+            <h2>Durasi &amp; potongan klip</h2>
+            <span class="dur-pill tnum" id="ed-dur-badge">0 dtk</span>
+          </div>
+          <div id="ed-trim-box">
+            <div class="trim-row">
+              <span class="trim-lbl">Awal</span>
+              <div class="trim-btns">
+                <button type="button" class="ghost xs" data-trim="start" data-delta="-10">−10s</button>
+                <button type="button" class="ghost xs" data-trim="start" data-delta="-5">−5s</button>
+                <button type="button" class="ghost xs" data-trim="start" data-delta="-2">−2s</button>
+                <b class="trim-val tnum" id="ed-start-val">0:00</b>
+                <button type="button" class="ghost xs" data-trim="start" data-delta="2">+2s</button>
+                <button type="button" class="ghost xs" data-trim="start" data-delta="5">+5s</button>
+                <button type="button" class="ghost xs" data-trim="start" data-delta="10">+10s</button>
+                <button type="button" class="ghost xs" id="ed-set-start" title="Gunakan posisi video saat ini sebagai awal klip">Dari video</button>
+              </div>
+            </div>
+            <div class="trim-row">
+              <span class="trim-lbl">Akhir</span>
+              <div class="trim-btns">
+                <button type="button" class="ghost xs" data-trim="end" data-delta="-10">−10s</button>
+                <button type="button" class="ghost xs" data-trim="end" data-delta="-5">−5s</button>
+                <button type="button" class="ghost xs" data-trim="end" data-delta="-2">−2s</button>
+                <b class="trim-val tnum" id="ed-end-val">0:00</b>
+                <button type="button" class="ghost xs" data-trim="end" data-delta="2">+2s</button>
+                <button type="button" class="ghost xs" data-trim="end" data-delta="5">+5s</button>
+                <button type="button" class="ghost xs" data-trim="end" data-delta="10">+10s</button>
+                <button type="button" class="ghost xs" id="ed-set-end" title="Gunakan posisi video saat ini sebagai akhir klip">Dari video</button>
+              </div>
+            </div>
+            <p class="hint" id="ed-trim-hint">Perpanjang atau pangkas klip untuk semua format. Subtitle &amp; preview otomatis ikut menyesuaikan.</p>
+          </div>
+          <div id="ed-segs-box" class="hidden">
+            <div class="seg-list" id="ed-segs-list"></div>
+            <div class="row between mt-s wrap">
+              <span class="hint">Klik ▶ untuk lompat, atau atur awal/akhir tiap potongan.</span>
+              <button type="button" class="ghost sm" id="ed-seg-add">+ Tambah 5 dtk di posisi video</button>
             </div>
           </div>
         </div>

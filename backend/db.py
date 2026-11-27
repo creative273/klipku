@@ -63,6 +63,8 @@ def _migrate(c):
         c.execute("ALTER TABLE clips ADD COLUMN peak_s REAL")
     if "heat_score" not in cols:
         c.execute("ALTER TABLE clips ADD COLUMN heat_score INTEGER NOT NULL DEFAULT 0 CHECK (heat_score BETWEEN 0 AND 100)")
+    if "segments" not in cols:
+        c.execute("ALTER TABLE clips ADD COLUMN segments TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(segments))")
     c.commit()
 
 

@@ -177,14 +177,28 @@ def fit_duration(units, a, b, lo, hi, total_dur):
     return a, b, start, end
 
 
-def detect(transcript, total_dur, clip_count, clip_duration, provider, model, key, job, emit, heatmap=None):
-    if not key:
-        raise RuntimeError(f"API key {PROVIDERS[provider]['label']} belum diisi. Buka Pengaturan.")
-    units = build_units(transcript["words"])
-    lo, hi = DURATIONS.get(clip_duration, DURATIONS["30-60"])
-    wins = windows(units)
-    per_win = max(2, math.ceil(clip_count * 1.5 / len(wins)) + 1)
+COMPILE_SYSTEM = """Kamu editor video kompilasi pendek (TikTok, Reels, Shorts).
+Tugasmu: dari transkrip bernomor, kumpulkan SEMUA potongan singkat (2-14 detik per potongan) yang cocok dengan permintaan pengguna untuk digabung menjadi 1 video kompilasi.
+
+Aturan memilih potongan:
+- Fokus PENUH pada permintaan pengguna. Ambil potongan-potongan yang benar-benar relevan, lucu, atau kuat.
+- Jika pengguna meminta bahasa tertentu di video campur bahasa (misalnya bahasa Indonesia di livestream berbahasa Inggris), tetap deteksi kata/frasa bahasa Indonesia meski transkrip mengejanya agak fonetik atau tercampur bahasa Inggris.
+- Setiap potongan harus utuh di batas ucapan (jangan terpotong di tengah kata) dan idealnya 2-14 detik.
+- Potongan tidak boleh saling tumpang tindih.
+- Jika tidak ada bagian yang cocok di jendela ini, balas {"snippets":[]}.
+
+Balas HANYA JSON dengan bentuk:
+{"title":"<judul kompilasi max 60 karakter, bahasa sama dengan transkrip, tanpa hashtag/emoji>","snippets":[{"start":<nomor baris awal>,"end":<nomor baris akhir>,"score":<0-100>,"note":"<ringkasan singkat 3-7 kata>"}]}"""
+
+COMPILE_TARGETS = {"30": 35.0, "60": 65.0, "30-60": 55.0}
+
+
+def _detect_compile(units, wins, total_dur, clip_duration, provider, model, key, job, emit, heatmap, prompt):
+    target_dur = COMPILE_TARGETS.get(clip_duration, 55.0)
+    per_win = max(5, math.ceil(16 / len(wins)) + 2)
+    focus = prompt or "Momen paling heboh, lucu, dan paling sering diputar ulang di video ini"
     cands = []
+    titles = []
     failed = []
     for wi, idxs in enumerate(wins):
         def fmt_line(i):
@@ -195,13 +209,147 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
 
         lines = "\n".join(fmt_line(i) for i in idxs)
         user = (
-            f"Durasi tiap klip harus {lo}-{hi} detik. Pilih maksimal {per_win} klip terbaik dari bagian ini.\n"
+            f"PERMINTAAN PENGGUNA: {focus}\n"
+            f"Pilih maksimal {per_win} potongan singkat terbaik (2-14 detik tiap potongan) dari bagian ini yang cocok dengan permintaan di atas.\n"
+            f"Nomor baris valid: {idxs[0]} sampai {idxs[-1]}.\n\nTRANSKRIP:\n{lines}"
+        )
+        emit("progress", stage="detect", pct=round(wi * 100 / len(wins), 1),
+             detail=f"AI mencari potongan kompilasi bagian {wi + 1} dari {len(wins)}" if len(wins) > 1
+             else "AI mencari potongan kompilasi")
+        try:
+            raw = chat(provider, model, key, COMPILE_SYSTEM, user, job)
+            data = parse_json(raw)
+        except (AuthError, Cancelled):
+            raise
+        except Exception as e:  # noqa: BLE001
+            failed.append(str(e))
+            emit("log", text=f"Bagian {wi + 1} dari {len(wins)} dilewati: {e}")
+            continue
+        t = (data.get("title") or "").strip()[:80]
+        if t:
+            titles.append(t)
+        for sp in data.get("snippets") or data.get("clips") or []:
+            try:
+                a, b = int(sp["start"]), int(sp["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if a < idxs[0] or a > idxs[-1]:
+                continue
+            b = max(a, min(b, idxs[-1]))
+            # batasi tiap potongan maksimal ~15 detik supaya kompilasi terasa padat
+            while b > a and units[b]["e"] - units[a]["s"] > 15.0:
+                b -= 1
+            s = max(0.0, units[a]["s"] - 0.20)
+            e = min(total_dur, units[b]["e"] + 0.35)
+            if e - s < 1.2:
+                e = min(total_dur, s + 2.0)
+            if e - s < 0.8:
+                continue
+            raw_score = sp.get("score")
+            if raw_score is None:
+                raw_score = round((int(sp.get("hook", 70) or 70) + int(sp.get("value", 70) or 70)) / 2)
+            score = max(0, min(100, int(raw_score or 70)))
+            heat = _heat_max(heatmap, s, e) if heatmap else 0.0
+            blended = min(100, round(score * 0.85 + heat * 100 * 0.15)) if heat >= 0.60 else score
+            note = (sp.get("note") or sp.get("reason") or units[a]["text"])[:70].strip()
+            cands.append({"s": round(s, 3), "e": round(e, 3), "score": blended, "heat": heat, "note": note})
+
+    emit("progress", stage="detect", pct=100)
+    if not cands:
+        if failed and len(failed) == len(wins):
+            raise RuntimeError(f"Semua bagian transkrip gagal dibaca AI. Error terakhir: {failed[-1]} "
+                               "Coba lagi, atau ganti model/provider di Pengaturan.")
+        raise RuntimeError("AI tidak menemukan potongan yang cocok dengan permintaanmu. Coba ubah deskripsi momennya.")
+
+    # Pilih potongan terkuat tanpa tumpang tindih hingga mencapai target durasi (maks 14 potongan)
+    cands.sort(key=lambda x: x["score"], reverse=True)
+    picked = []
+    acc_dur = 0.0
+    max_dur = target_dur * 1.15
+    for c in cands:
+        if any(not (c["e"] <= o["s"] or c["s"] >= o["e"]) for o in picked):
+            continue
+        d = c["e"] - c["s"]
+        if picked and acc_dur >= target_dur and acc_dur + d > max_dur:
+            continue
+        picked.append(c)
+        acc_dur += d
+        if len(picked) >= 14 or acc_dur >= target_dur:
+            break
+
+    # Urutkan kronologis dan gabungkan potongan yang jaraknya < 1.2 detik agar transisi halus
+    picked.sort(key=lambda x: x["s"])
+    merged = []
+    for p in picked:
+        if merged and p["s"] - merged[-1]["e"] < 1.2 and (p["e"] - merged[-1]["s"]) <= 18.0:
+            merged[-1]["e"] = p["e"]
+            merged[-1]["score"] = max(merged[-1]["score"], p["score"])
+            merged[-1]["heat"] = max(merged[-1]["heat"], p["heat"])
+        else:
+            merged.append(dict(p))
+
+    best = max(merged, key=lambda x: (x["score"], x["heat"]))
+    avg_sc = max(50, min(100, round(sum(x["score"] for x in merged) / len(merged))))
+    max_heat = max(x["heat"] for x in merged)
+    sum_dur = sum(x["e"] - x["s"] for x in merged)
+    segs = [{"s": x["s"], "e": x["e"], "note": x["note"]} for x in merged]
+    title = titles[0] if titles else (f"Kompilasi: {prompt[:48]}" if prompt else "Kompilasi momen terbaik")
+    reason = f"Kompilasi {len(segs)} potongan ({round(sum_dur)} dtk)" + (f" · {prompt}" if prompt else "")
+    if failed:
+        emit("log", text=f"{len(failed)} dari {len(wins)} bagian transkrip dilewati karena error AI.")
+    return [{
+        "start_s": segs[0]["s"],
+        "end_s": max(segs[-1]["e"], segs[0]["s"] + 1.0),
+        "peak_s": best["s"],
+        "heat_score": round(max_heat * 100),
+        "score_hook": avg_sc,
+        "score_flow": avg_sc,
+        "score_value": avg_sc,
+        "score_total": avg_sc,
+        "hook_title": title[:80],
+        "reason": reason[:300],
+        "segments": segs,
+    }]
+
+
+def detect(transcript, total_dur, clip_count, clip_duration, provider, model, key, job, emit,
+           heatmap=None, prompt=None, compile_mode=False):
+    if not key:
+        raise RuntimeError(f"API key {PROVIDERS[provider]['label']} belum diisi. Buka Pengaturan.")
+    units = build_units(transcript["words"])
+    wins = windows(units)
+    prompt = (prompt or "").strip()[:300]
+    if compile_mode:
+        return _detect_compile(units, wins, total_dur, clip_duration, provider, model, key, job, emit, heatmap, prompt)
+
+    lo, hi = DURATIONS.get(clip_duration, DURATIONS["30-60"])
+    per_win = max(2, math.ceil(clip_count * 1.5 / len(wins)) + 1)
+    sys_prompt = SYSTEM
+    if prompt:
+        sys_prompt += (
+            f"\n\nFOKUS UTAMA DARI PENGGUNA: {prompt}\n"
+            "Prioritaskan dan HANYA pilih momen yang relevan dengan fokus pengguna di atas. "
+            "Jika pengguna meminta bahasa tertentu di video campur bahasa, tetap kenali kata yang dieja fonetik."
+        )
+    cands = []
+    failed = []
+    for wi, idxs in enumerate(wins):
+        def fmt_line(i):
+            u = units[i]
+            hv = _heat_max(heatmap, u["s"], u["e"]) if heatmap else 0.0
+            tag = f" [MOST REPLAYED {round(hv * 100)}%]" if hv >= 0.65 else ""
+            return f"[{i}] ({fmt_time(u['s'])}){tag} {u['text']}"
+
+        lines = "\n".join(fmt_line(i) for i in idxs)
+        focus_line = f"FOKUS MOMEN YANG DIMINTA: {prompt}\n" if prompt else ""
+        user = (
+            f"{focus_line}Durasi tiap klip harus {lo}-{hi} detik. Pilih maksimal {per_win} klip terbaik dari bagian ini.\n"
             f"Nomor baris valid: {idxs[0]} sampai {idxs[-1]}.\n\nTRANSKRIP:\n{lines}"
         )
         emit("progress", stage="detect", pct=round(wi * 100 / len(wins), 1),
              detail=f"AI membaca transkrip bagian {wi + 1} dari {len(wins)}" if len(wins) > 1 else None)
         try:
-            raw = chat(provider, model, key, SYSTEM, user, job)
+            raw = chat(provider, model, key, sys_prompt, user, job)
             data = parse_json(raw)
         except (AuthError, Cancelled):
             raise
@@ -244,6 +392,7 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
                 "score_total": total,
                 "hook_title": (c.get("title") or units[a]["text"])[:80].strip(),
                 "reason": (c.get("reason") or "")[:300],
+                "segments": [],
             })
     emit("progress", stage="detect", pct=100)
     cands.sort(key=lambda c: c["score_total"], reverse=True)
@@ -257,7 +406,7 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
         if failed and len(failed) == len(wins):
             raise RuntimeError(f"Semua bagian transkrip gagal dibaca AI. Error terakhir: {failed[-1]} "
                                "Coba lagi, atau ganti model/provider di Pengaturan.")
-        raise RuntimeError("AI tidak menemukan momen yang cocok. Coba durasi klip lain atau model lain.")
+        raise RuntimeError("AI tidak menemukan momen yang cocok. Coba durasi klip lain, deskripsi lain, atau model lain.")
     if failed:
         emit("log", text=f"{len(failed)} dari {len(wins)} bagian transkrip dilewati karena error AI.")
     return chosen

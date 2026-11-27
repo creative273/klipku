@@ -1,7 +1,7 @@
 {
   "name": "klipku",
   "productName": "Klipku",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Klipku - ubah video panjang jadi klip pendek otomatis dengan AI (gratis)",
   "main": "electron/main.js",
   "private": true,

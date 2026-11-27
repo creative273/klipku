@@ -8,7 +8,7 @@
 
   <p>
     <a href="https://github.com/creative273/klipku/releases/latest">
-      <img src="https://img.shields.io/badge/Download-Windows%20x64%20(v1.3.0)-F5B301?style=for-the-badge&logo=windows&logoColor=140E00" alt="Download Windows x64" />
+      <img src="https://img.shields.io/badge/Download-Windows%20x64%20(v1.4.0)-F5B301?style=for-the-badge&logo=windows&logoColor=140E00" alt="Download Windows x64" />
     </a>
     <a href="https://www.youtube.com/@misterisia?sub_confirmation=1">
       <img src="https://img.shields.io/badge/YouTube-@misterisia-EF4444?style=for-the-badge&logo=youtube&logoColor=white" alt="Subscribe YouTube @misterisia" />
@@ -41,12 +41,14 @@ Capek harus bayar langganan mahal tiap bulan atau kena watermark gede cuma buat 
 
 - **Tempel Link atau Tarik File Video** — Mendukung link YouTube, TikTok, Instagram (via `yt-dlp`), atau langsung drag-and-drop file lokal (`MP4`, `MOV`, `MKV`, `WEBM`, `AVI`).
 - **AI + Heatmap Most Replayed YouTube** — Menggabungkan data grafik *Most Replayed* YouTube dengan analisis AI untuk menemukan momen paling ramai & utuh, lengkap dengan skor **Hook · Flow · Value** dan judul hook gaya AIDA.
+- **Fokus Momen AI & Mode Kompilasi (1 Klip)** — Minta AI mencari momen tertentu sesuai deskripsi (mis. *"kumpulan dia ngomong bahasa Indonesia"* atau *"semua momen marah"*), dan aktifkan **Gabung jadi 1 klip (Kompilasi)** agar semua potongan singkat sepanjang video otomatis dijahit menjadi 1 klip utuh.
 - **Mode Hook 5 Detik di Depan** — Taruh 5 detik momen paling klimaks/viral di awal klip, lalu otomatis sambung ke momen sebelumnya (mis. 5 dtk momen heboh + 25 dtk cerita sebelum kejadian) supaya penonton langsung berhenti scroll.
+- **Perpanjang / Pangkas Durasi di Editor (Semua Mode)** — Merasa potongan AI kurang panjang atau terlalu cepat selesai? Di Editor kamu bisa langsung tambah/kurangi awal & akhir klip (`±2s`, `±5s`, `±10s`, atau dari posisi video), atau atur tiap potongan kompilasi dengan subtitle & preview yang otomatis ikut sinkron.
 - **Transkrip Online Super Cepat atau 100% Offline** — Pakai **Groq Whisper** (gratis & kencang) atau jalankan **Faster-Whisper offline** langsung di CPU laptop tanpa internet dan tanpa API key.
 - **5 Format Klip + Auto Face Tracking** — Otomatis mengikuti wajah pembicara, bahkan otomatis membagi layar atas-bawah untuk shot 2 orang (podcast/wawancara).
 - **Mode Gaming: Auto Facecam & Crop Manual + Live Preview** — Deteksi kotak webcam otomatis *atau* pilih sendiri area **Facecam (atas)** dan **Gameplay (bawah)** dengan kotak geser/resize interaktif, rasio anti-gepeng, plus 1 klik terapkan ke semua klip dalam satu sesi.
 - **Caption Editor Word-by-Word** — 6 preset gaya caption siap pakai + buat preset warna/font/posisi sendiri, koreksi kata yang salah ketik, overlay judul hook di 3 detik awal, serta watermark logo/teks opsional.
-- **Aman & Praktis** — Semua proses render berjalan lokal dengan FFmpeg. API key disimpan terenkripsi di **Windows Credential Manager**, bukan di file teks. Update `yt-dlp` dan cek versi Klipku terbaru bisa langsung dari dalam Pengaturan.
+- **Aman & Praktis** — Semua proses render berjalan lokal dengan FFmpeg. API key disimpan terenkripsi di **Windows Credential Manager**, bukan di file teks. Update `yt-dlp` dan auto-update Klipku bisa langsung dari dalam Pengaturan.
 
 <p align="center">
   <img src="docs/screenshots/gaming-crop.png" alt="Mode Crop Manual Format Gaming dengan Live Preview 9:16" width="92%" />
@@ -73,7 +75,7 @@ Resolusi output tersedia mulai dari **720p**, **1080p**, **2K**, hingga **4K**.
 ## Cara Mulai dalam 3 Menit
 
 ### 1. Download & Install
-1. Buka halaman **[Releases](https://github.com/creative273/klipku/releases/latest)** (atau tab **[Actions](https://github.com/creative273/klipku/actions)** untuk build terbaru) lalu unduh **`Klipku-Setup-1.3.0-win-x64.exe`**.
+1. Buka halaman **[Releases](https://github.com/creative273/klipku/releases/latest)** (atau tab **[Actions](https://github.com/creative273/klipku/actions)** untuk build terbaru) lalu unduh **`Klipku-Setup-1.4.0-win-x64.exe`**.
 2. Jalankan installer seperti biasa (semua mesin Python, FFmpeg, Deno, dan model deteksi wajah sudah ikut di dalam installer — tidak perlu install apa pun lagi).
    > **Catatan Windows SmartScreen:** Karena aplikasi ini gratis & open-source (belum menggunakan sertifikat berbayar), Windows mungkin menampilkan *"Windows protected your PC"*. Klik **More info → Run anyway** untuk melanjutkan.
 
@@ -85,9 +87,9 @@ Buka menu **Pengaturan** di dalam Klipku:
 
 ### 3. Buat Klip Pertamamu
 1. Tempel link YouTube/TikTok/Instagram **atau** tarik file video dari laptop ke halaman **Buat klip**.
-2. Pilih **Format** (`Face 9:16`, `Gaming`, dll.) dan **Gaya Caption**.
+2. Pilih **Format** (`Face 9:16`, `Gaming`, dll.), **Gaya Caption**, dan opsional isi **Fokus momen AI** (atau aktifkan **Gabung jadi 1 klip** untuk kompilasi).
 3. Klik **Buat klip** dan tunggu progresnya selesai.
-4. Setelah jadi, kamu bisa klik **Edit** di kartu klip mana saja untuk mengedit teks caption, ganti judul hook dengan AI, atau atur **Crop Manual** untuk Gaming, lalu klik **Simpan & render**.
+4. Setelah jadi, kamu bisa klik **Edit** di kartu klip mana saja untuk memperpanjang/pangkas durasi, atur potongan kompilasi, edit teks caption, ganti judul hook dengan AI, atau atur **Crop Manual** untuk Gaming, lalu klik **Simpan & render**.
 
 ---
 

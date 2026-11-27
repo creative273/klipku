@@ -122,6 +122,8 @@ def create_session(params: dict) -> dict:
         "caption_style_id": params.get("caption_style_id") or st.get("caption_style_id") or styles.DEFAULT_ID,
         "title_overlay": 1 if params.get("title_overlay") else 0,
         "hook_clip_on": 1 if params.get("hook_clip_on") else 0,
+        "prompt": (params.get("prompt") or "").strip()[:300],
+        "compile_mode": 1 if params.get("compile_mode") else 0,
     }
     db.update("sessions", sid, {"opts": json.dumps(opts)})
     _jobs[sid] = Job()
@@ -137,7 +139,7 @@ def retry(session_id):
     st = db.get_settings()
     opts = {"format": "face916", "resolution": st["resolution"], "subtitle_on": 1, "gaming_split": 0.40,
             "caption_style_id": st.get("caption_style_id") or styles.DEFAULT_ID, "title_overlay": 0,
-            "hook_clip_on": 0, **opts}
+            "hook_clip_on": 0, "prompt": "", "compile_mode": 0, **opts}
     # pakai pengaturan terbaru: biasanya user baru memperbaiki key/mode/provider sebelum Coba lagi
     db.update("sessions", session_id, {"stage": "queued", "error": None, "transcribe_mode": st["transcribe_mode"],
                                        "provider": st["provider"], "model": st["model"]})
@@ -237,19 +239,26 @@ def _run_pipeline(sid, opts, job: Job):
 
     # 3. detect
     _stage(sid, "detect")
+    prompt = (opts.get("prompt") or "").strip()
+    compile_mode = bool(opts.get("compile_mode"))
+    if prompt or compile_mode:
+        log_line(sid, ("Mode kompilasi (1 klip)" if compile_mode else "Fokus momen")
+                      + (f": {prompt}" if prompt else ""))
     found = detect(tr, info["duration"], s["clip_count"], s["clip_duration"],
-                   s["provider"], s["model"], keys.get(s["provider"]), job, ev, heatmap=heatmap)
+                   s["provider"], s["model"], keys.get(s["provider"]), job, ev,
+                   heatmap=heatmap, prompt=prompt, compile_mode=compile_mode)
     db.exec_("DELETE FROM clips WHERE session_id=?", (sid,))
     for rank, c in enumerate(found, 1):
         db.exec_(
             "INSERT INTO clips(id, session_id, rank, start_s, end_s, score_total, score_hook, score_flow, score_value, "
             "heat_score, reason, hook_title, format, subtitle_on, gaming_split, resolution, status, caption_style_id, "
-            "title_overlay, hook_clip_on, peak_s, created_at, updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "title_overlay, hook_clip_on, peak_s, segments, created_at, updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (db.new_id(), sid, rank, c["start_s"], c["end_s"], c["score_total"], c["score_hook"], c["score_flow"],
              c["score_value"], c.get("heat_score", 0), c["reason"], c["hook_title"], opts["format"],
              opts["subtitle_on"], opts["gaming_split"], opts["resolution"], "pending", opts["caption_style_id"],
-             opts["title_overlay"], opts.get("hook_clip_on", 0), c.get("peak_s"), db.now(), db.now()),
+             opts["title_overlay"], opts.get("hook_clip_on", 0), c.get("peak_s"),
+             json.dumps(c.get("segments") or [], ensure_ascii=False), db.now(), db.now()),
         )
     log_line(sid, f"Momen ditemukan: {len(found)}")
     emit(sid, "clips")

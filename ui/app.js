@@ -156,10 +156,16 @@ const durChoice = choice('duration', updateMoreSummary);
 function updateMoreSummary() {
   const d = durChoice.get();
   const label = d === '30-60' ? '30–60 dtk' : `${d} dtk`;
+  const compile = $('compile-mode').checked;
+  $('count').disabled = compile;
+  $('compile-hint').textContent = compile
+    ? 'Semua potongan yang cocok di seluruh video akan dijahit jadi 1 klip.'
+    : 'Kosongkan untuk cari momen viral otomatis seperti biasa.';
   const n = Math.max(1, Math.min(10, parseInt($('count').value, 10) || 5));
-  $('more-sum').textContent = `Durasi ${label} · ${n} klip · ${$('res').selectedOptions[0].textContent}`;
+  $('more-sum').textContent = `Durasi ${label} · ${compile ? '1 klip kompilasi' : `${n} klip`} · ${$('res').selectedOptions[0].textContent}`;
 }
 ['count', 'res'].forEach((id) => $(id).addEventListener('input', updateMoreSummary));
+$('compile-mode').addEventListener('change', updateMoreSummary);
 
 // ---------- kesiapan + tombol utama ----------
 
@@ -197,12 +203,13 @@ $('run').onclick = async () => {
   if (!url && !filePath) return toast('Tempel link video atau pilih file dulu.', true);
   $('run').disabled = true;
   try {
+    const compile = $('compile-mode').checked;
     const s = await api('/sessions', {
       method: 'POST',
       body: {
         url: url || null,
         file_path: url ? null : filePath,
-        clip_count: Math.max(1, Math.min(10, parseInt($('count').value, 10) || 5)),
+        clip_count: compile ? 1 : Math.max(1, Math.min(10, parseInt($('count').value, 10) || 5)),
         clip_duration: durChoice.get(),
         format: fmtChoice.get(),
         resolution: $('res').value,
@@ -211,9 +218,14 @@ $('run').onclick = async () => {
         caption_style_id: createStyleId,
         title_overlay: $('title-ov').checked,
         hook_clip_on: $('hook-clip').checked,
+        prompt: $('prompt').value.trim() || null,
+        compile_mode: compile,
       },
     });
     $('url').value = '';
+    $('prompt').value = '';
+    $('compile-mode').checked = false;
+    updateMoreSummary();
     setFile(null);
     openSession(s.id);
     pollActive();
@@ -347,6 +359,13 @@ async function renderSession() {
   for (const c of s.clips) g.append(clipCard(c, running));
 }
 
+function clipSegs(c) {
+  try {
+    const arr = Array.isArray(c.segments) ? c.segments : JSON.parse(c.segments || '[]');
+    return Array.isArray(arr) ? arr.filter((x) => x && Number(x.e) > Number(x.s)) : [];
+  } catch { return []; }
+}
+
 function clipCard(c, running) {
   const shape = c.format === 'square' ? ' square' : c.format === 'landscape' ? ' landscape' : '';
   const ver = encodeURIComponent(c.updated_at);
@@ -360,13 +379,18 @@ function clipCard(c, running) {
     inner = el('div', { class: 'ph' }, el('span', { class: c.status === 'failed' ? 'state-err' : '' }, txt),
       c.status === 'failed' && c.error ? el('span', { class: 'sub' }, c.error.slice(0, 140)) : null);
   }
+  const segs = clipSegs(c);
+  const dur = segs.length ? segs.reduce((a, x) => a + (Number(x.e) - Number(x.s)), 0) : (c.end_s - c.start_s);
+  const metaTxt = segs.length
+    ? `${Math.round(dur)} dtk · ${segs.length} potongan · ${FORMAT_LABEL[c.format]}`
+    : `${Math.round(dur)} dtk · ${FORMAT_LABEL[c.format]} · mulai ${fmtDur(c.start_s)}`;
   const note = trackNote(c);
   return el('article', { class: `clip ${c.status}` },
     el('div', { class: `media${shape}` }, inner,
       el('span', { class: 'rank' }, `#${c.rank}`),
       el('span', { class: 'score', title: `Hook ${c.score_hook} · Flow ${c.score_flow} · Value ${c.score_value}` }, String(c.score_total))),
     el('div', { class: 'title', title: c.reason || '' }, c.hook_title),
-    el('div', { class: 'meta' }, `${Math.round(c.end_s - c.start_s)} dtk · ${FORMAT_LABEL[c.format]} · mulai ${fmtDur(c.start_s)}`),
+    el('div', { class: 'meta' }, metaTxt),
     note ? el('div', { class: 'sub' }, note) : null,
     el('div', { class: 'actions' },
       el('button', { class: 'primary sm', disabled: running, onclick: () => openEditor(c.id) }, 'Edit'),
@@ -384,6 +408,8 @@ async function rerenderClip(c) {
 
 function trackNote(c) {
   const tags = [];
+  const segs = clipSegs(c);
+  if (segs.length) tags.push(`✂️ Kompilasi ${segs.length} potongan`);
   if (c.heat_score >= 55) tags.push(`🔥 Most Replayed ${c.heat_score}%`);
   if (c.hook_clip_on) tags.push('⚡ Hook 5 dtk');
   if (c.format === 'gaming916') {
@@ -593,8 +619,9 @@ async function loadStyles() {
 
 const ED = {
   clip: null, words: [], overrides: {}, styleId: null, session: null, raf: 0,
-  source: { width: 1920, height: 1080 }, facecam: null,
+  source: { width: 1920, height: 1080, duration_s: 0 }, facecam: null,
   gamingCrop: { mode: 'auto', facecam: null, gameplay: null },
+  start_s: 0, end_s: 30, segments: [], curSeg: 0, wordsTimer: null,
 };
 
 function groupWords(ws, maxWords) {
@@ -832,6 +859,210 @@ function gcSetupInteractions() {
 }
 gcSetupInteractions();
 
+function fmtDurDec(s) {
+  if (!Number.isFinite(s)) return '0:00.0';
+  s = Math.max(0, s);
+  const whole = Math.floor(s);
+  const tenths = Math.floor((s - whole) * 10 + 1e-6);
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const sec = String(whole % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}.${tenths}` : `${m}:${sec}.${tenths}`;
+}
+
+function edIsCompiled() { return Array.isArray(ED.segments) && ED.segments.length > 0; }
+function edSourceDur() {
+  const v = $('ed-video');
+  const vd = v && Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+  return Math.max(vd, Number(ED.source.duration_s) || 0, ED.end_s || 0, 10);
+}
+function edTotalDur() {
+  if (edIsCompiled()) return Math.max(0.5, ED.segments.reduce((a, x) => a + Math.max(0, x.e - x.s), 0));
+  return Math.max(3, ED.end_s - ED.start_s);
+}
+function edMapRelToSrc(relT) {
+  if (!edIsCompiled()) return { srcT: Math.max(ED.start_s, Math.min(ED.end_s, ED.start_s + relT)), segIdx: 0 };
+  let acc = 0;
+  for (let i = 0; i < ED.segments.length; i++) {
+    const sg = ED.segments[i];
+    const d = Math.max(0.1, sg.e - sg.s);
+    if (relT <= acc + d || i === ED.segments.length - 1) {
+      return { srcT: Math.max(sg.s, Math.min(sg.e, sg.s + (relT - acc))), segIdx: i };
+    }
+    acc += d;
+  }
+  return { srcT: ED.segments[0].s, segIdx: 0 };
+}
+function edRel() {
+  const v = $('ed-video');
+  const ct = v ? v.currentTime : 0;
+  if (!edIsCompiled()) return Math.max(0, Math.min(edTotalDur(), ct - ED.start_s));
+  let idx = Math.max(0, Math.min(ED.segments.length - 1, ED.curSeg || 0));
+  const cur = ED.segments[idx];
+  if (!(ct >= cur.s - 0.15 && ct <= cur.e + 0.15)) {
+    const found = ED.segments.findIndex((sg) => ct >= sg.s - 0.15 && ct <= sg.e + 0.15);
+    if (found >= 0) { idx = found; ED.curSeg = found; }
+  }
+  let acc = 0;
+  for (let i = 0; i < idx; i++) acc += Math.max(0, ED.segments[i].e - ED.segments[i].s);
+  const sg = ED.segments[idx];
+  return Math.max(0, acc + Math.max(0, Math.min(sg.e - sg.s, ct - sg.s)));
+}
+
+function edSyncPeakBounds() {
+  if (!ED.clip) return;
+  const total = edTotalDur();
+  const hookDur = Math.min(5, Math.max(2.5, total * 0.25));
+  const peakMin = edIsCompiled() ? ED.segments[0].s : ED.start_s;
+  const peakMax = edIsCompiled()
+    ? Math.max(peakMin, ED.segments[ED.segments.length - 1].e - 2.5)
+    : Math.max(ED.start_s, ED.end_s - hookDur);
+  const cur = Number($('ed-peak').value);
+  $('ed-peak').min = peakMin.toFixed(1);
+  $('ed-peak').max = peakMax.toFixed(1);
+  if (!Number.isFinite(cur) || cur < peakMin || cur > peakMax) {
+    const defPeak = ED.clip.peak_s != null ? ED.clip.peak_s : (peakMin + (peakMax - peakMin) * 0.65);
+    $('ed-peak').value = Math.max(peakMin, Math.min(peakMax, defPeak)).toFixed(1);
+  }
+}
+
+function edRefreshWords() {
+  clearTimeout(ED.wordsTimer);
+  ED.wordsTimer = setTimeout(async () => {
+    if (!ED.clip) return;
+    try {
+      const q = edIsCompiled()
+        ? `?segments=${encodeURIComponent(JSON.stringify(ED.segments))}`
+        : `?start_s=${ED.start_s.toFixed(3)}&end_s=${ED.end_s.toFixed(3)}`;
+      const r = await api(`/clips/${ED.clip.id}/words${q}`);
+      ED.words = r.words || [];
+      renderWords();
+      drawOverlay();
+    } catch { /* abaikan error sementara */ }
+  }, 150);
+}
+
+function edRenderDurUi() {
+  if (!ED.clip) return;
+  const compiled = edIsCompiled();
+  $('ed-trim-box').classList.toggle('hidden', compiled);
+  $('ed-segs-box').classList.toggle('hidden', !compiled);
+  const tot = edTotalDur();
+  const srcD = edSourceDur();
+  if (!compiled) {
+    $('ed-dur-badge').textContent = `${tot.toFixed(1)} dtk · sumber ${fmtDur(srcD)}`;
+    $('ed-start-val').textContent = fmtDurDec(ED.start_s);
+    $('ed-end-val').textContent = fmtDurDec(ED.end_s);
+  } else {
+    $('ed-dur-badge').textContent = `${ED.segments.length} potongan · total ${tot.toFixed(1)} dtk`;
+    const box = $('ed-segs-list');
+    box.innerHTML = '';
+    ED.segments.forEach((sg, idx) => {
+      const d = Math.max(0.5, sg.e - sg.s);
+      const adjust = (edge, delta) => {
+        const lim = edSourceDur();
+        if (edge === 's') {
+          const ns = Math.max(0, Math.min(sg.e - 0.8, sg.s + delta));
+          sg.s = Math.round(ns * 100) / 100;
+        } else {
+          const ne = Math.min(lim, Math.max(sg.s + 0.8, sg.e + delta));
+          sg.e = Math.round(ne * 100) / 100;
+        }
+        ED.curSeg = idx;
+        $('ed-video').currentTime = edge === 's' ? sg.s : Math.max(sg.s, sg.e - 1.5);
+        edOnRangeUpdated();
+      };
+      box.append(el('div', { class: `seg-item${idx === ED.curSeg ? ' now' : ''}`, 'data-seg': String(idx) },
+        el('span', { class: 'seg-idx tnum' }, `#${idx + 1}`),
+        el('div', { class: 'seg-meta' },
+          el('span', { class: 'seg-time tnum' }, `${fmtDurDec(sg.s)} – ${fmtDurDec(sg.e)} (${d.toFixed(1)} dtk)`),
+          sg.note ? el('span', { class: 'seg-note', title: sg.note }, sg.note) : null),
+        el('div', { class: 'seg-acts' },
+          el('button', { type: 'button', class: 'ghost xs', title: 'Putar potongan ini', onclick: () => {
+            ED.curSeg = idx;
+            const v = $('ed-video');
+            v.currentTime = sg.s;
+            v.play().catch(() => {});
+            edRenderDurUi();
+          } }, '▶'),
+          el('button', { type: 'button', class: 'ghost xs', title: 'Mundurkan awal 2 detik', onclick: () => adjust('s', -2) }, 'Awal −2s'),
+          el('button', { type: 'button', class: 'ghost xs', title: 'Majukan awal 2 detik', onclick: () => adjust('s', 2) }, '+2s'),
+          el('button', { type: 'button', class: 'ghost xs', title: 'Pendekkan akhir 2 detik', onclick: () => adjust('e', -2) }, 'Akhir −2s'),
+          el('button', { type: 'button', class: 'ghost xs', title: 'Perpanjang akhir 2 detik', onclick: () => adjust('e', 2) }, '+2s'),
+          el('button', { type: 'button', class: 'ghost xs', title: 'Hapus potongan ini', disabled: ED.segments.length <= 1, onclick: () => {
+            if (ED.segments.length <= 1) return;
+            ED.segments.splice(idx, 1);
+            ED.curSeg = Math.max(0, Math.min(ED.curSeg, ED.segments.length - 1));
+            edOnRangeUpdated();
+          } }, '×'))));
+    });
+  }
+  $('ed-seek').max = tot.toFixed(2);
+  edSyncPeakBounds();
+  edHookUi();
+}
+
+function edOnRangeUpdated() {
+  if (edIsCompiled()) {
+    ED.start_s = Math.min(...ED.segments.map((x) => x.s));
+    ED.end_s = Math.max(...ED.segments.map((x) => x.e));
+  }
+  edRenderDurUi();
+  edRefreshWords();
+  drawOverlay();
+}
+
+document.querySelectorAll('[data-trim]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (!ED.clip || edIsCompiled()) return;
+    const edge = btn.dataset.trim;
+    const delta = Number(btn.dataset.delta);
+    const lim = edSourceDur();
+    if (edge === 'start') {
+      const ns = Math.max(0, Math.min(ED.end_s - 3, ED.start_s + delta));
+      if (Math.abs(ns - ED.start_s) < 0.05) return toast(delta > 0 ? 'Durasi minimal 3 detik.' : 'Sudah di awal video.', true);
+      ED.start_s = Math.round(ns * 100) / 100;
+      $('ed-video').currentTime = ED.start_s;
+    } else {
+      const ne = Math.min(lim, Math.max(ED.start_s + 3, ED.end_s + delta));
+      if (Math.abs(ne - ED.end_s) < 0.05) return toast(delta < 0 ? 'Durasi minimal 3 detik.' : 'Sudah di akhir video.', true);
+      ED.end_s = Math.round(ne * 100) / 100;
+      $('ed-video').currentTime = Math.max(ED.start_s, ED.end_s - 2.0);
+    }
+    edOnRangeUpdated();
+  });
+});
+
+$('ed-set-start').onclick = () => {
+  if (!ED.clip || edIsCompiled()) return;
+  const ct = $('ed-video').currentTime;
+  const ns = Math.max(0, Math.min(ED.end_s - 3, ct));
+  ED.start_s = Math.round(ns * 100) / 100;
+  edOnRangeUpdated();
+  toast(`Awal klip diatur ke ${fmtDurDec(ED.start_s)}.`);
+};
+$('ed-set-end').onclick = () => {
+  if (!ED.clip || edIsCompiled()) return;
+  const ct = $('ed-video').currentTime;
+  const lim = edSourceDur();
+  const ne = Math.min(lim, Math.max(ED.start_s + 3, ct));
+  ED.end_s = Math.round(ne * 100) / 100;
+  edOnRangeUpdated();
+  toast(`Akhir klip diatur ke ${fmtDurDec(ED.end_s)}.`);
+};
+$('ed-seg-add').onclick = () => {
+  if (!ED.clip || !edIsCompiled()) return;
+  const lim = edSourceDur();
+  const s = Math.max(0, Math.min(lim - 1.5, $('ed-video').currentTime || 0));
+  const e = Math.min(lim, s + 5.0);
+  ED.segments.push({ s: Math.round(s * 100) / 100, e: Math.round(e * 100) / 100, note: 'Potongan tambahan' });
+  ED.segments.sort((a, b) => a.s - b.s);
+  ED.curSeg = ED.segments.findIndex((x) => Math.abs(x.s - Math.round(s * 100) / 100) < 0.05);
+  if (ED.curSeg < 0) ED.curSeg = 0;
+  edOnRangeUpdated();
+  toast('Potongan 5 detik ditambahkan.');
+};
+
 async function openEditor(cid) {
   let r;
   try { r = await api(`/clips/${cid}/words`); } catch (e) { return toast(e.message, true); }
@@ -839,8 +1070,12 @@ async function openEditor(cid) {
   ED.words = r.words;
   ED.overrides = JSON.parse(r.clip.caption_overrides || '{}');
   ED.styleId = r.clip.caption_style_id || (r.style && r.style.id);
-  ED.source = r.source || { width: 1920, height: 1080 };
+  ED.source = r.source || { width: 1920, height: 1080, duration_s: r.clip.end_s };
   ED.facecam = r.facecam || null;
+  ED.start_s = Number(r.clip.start_s);
+  ED.end_s = Number(r.clip.end_s);
+  ED.segments = clipSegs(r.clip).map((x) => ({ s: Number(x.s), e: Number(x.e), note: x.note || '' }));
+  ED.curSeg = 0;
   let gc = {};
   try { gc = JSON.parse(r.clip.gaming_crop || '{}'); } catch { gc = {}; }
   ED.gamingCrop = {
@@ -859,14 +1094,8 @@ async function openEditor(cid) {
   $('ed-face').checked = !!c.face_tracking;
   $('ed-split').value = Math.round((c.gaming_split || 0.4) * 100);
   $('ed-hook-clip').checked = !!c.hook_clip_on;
-  const totalClip = Math.max(3, c.end_s - c.start_s);
-  const hookDur = Math.min(5, Math.max(2.5, totalClip * 0.25));
-  const peakMin = c.start_s;
-  const peakMax = Math.max(c.start_s, c.end_s - hookDur);
-  const defPeak = c.peak_s != null ? c.peak_s : (c.start_s + totalClip * 0.65);
-  $('ed-peak').min = peakMin.toFixed(1);
-  $('ed-peak').max = peakMax.toFixed(1);
-  $('ed-peak').value = Math.max(peakMin, Math.min(peakMax, defPeak)).toFixed(1);
+  $('ed-peak').value = c.peak_s != null ? Number(c.peak_s).toFixed(1) : '';
+  edRenderDurUi();
   edFormatUi();
   $('ed-title').value = c.hook_title;
   $('ed-title-ov').checked = !!c.title_overlay;
@@ -876,13 +1105,14 @@ async function openEditor(cid) {
   const v = $('ed-video');
   v.src = media(`/sessions/${c.session_id}/source`);
   v.onloadedmetadata = () => {
-    v.currentTime = c.start_s;
+    if (Number.isFinite(v.duration) && v.duration > 0 && !ED.source.duration_s) ED.source.duration_s = v.duration;
+    v.currentTime = edIsCompiled() ? ED.segments[0].s : ED.start_s;
+    edRenderDurUi();
     gcRenderBoxes();
     drawOverlay();
   };
   v.onloadeddata = () => { gcRenderBoxes(); drawOverlay(); };
   v.onerror = () => toast('Video sumber tidak bisa diputar (mungkin sudah dihapus). Caption tetap bisa diedit.', true);
-  $('ed-seek').max = (c.end_s - c.start_s).toFixed(2);
   renderPresets();
   renderWords();
   fillCustomForm(edStyle());
@@ -905,14 +1135,18 @@ function edHookUi() {
   const on = $('ed-hook-clip').checked;
   $('ed-peak-box').classList.toggle('hidden', !on);
   if (!on) return;
-  const total = Math.max(3, c.end_s - c.start_s);
+  const total = edTotalDur();
   const hookDur = Math.min(5, Math.max(2.5, total * 0.25));
-  const mainDur = Math.max(3, total - hookDur);
-  const hs = Number($('ed-peak').value || c.start_s);
+  const hs = Number($('ed-peak').value || ED.start_s);
   const he = hs + hookDur;
-  const ms = hs >= 3 ? Math.max(0, hs - mainDur) : c.start_s;
-  const me = hs >= 3 ? hs : ms + mainDur;
   $('ed-peak-val').textContent = fmtDur(hs);
+  if (edIsCompiled()) {
+    $('ed-peak-info').textContent = `0:00–${fmtDur(hookDur)} teaser momen puncak (${fmtDur(hs)}–${fmtDur(he)}) → lanjut ${ED.segments.length} potongan kompilasi`;
+    return;
+  }
+  const mainDur = Math.max(3, total - hookDur);
+  const ms = hs >= 3 ? Math.max(0, hs - mainDur) : ED.start_s;
+  const me = hs >= 3 ? hs : ms + mainDur;
   $('ed-peak-info').textContent =
     `0:00–${fmtDur(hookDur)} momen viral (${fmtDur(hs)}–${fmtDur(he)}) → lanjut ${Math.round(me - ms)} dtk sebelumnya (${fmtDur(ms)}–${fmtDur(me)})`;
 }
@@ -941,15 +1175,13 @@ $('ed-peak').addEventListener('input', () => {
   if (v && ED.clip) v.currentTime = Number($('ed-peak').value);
 });
 
-function edRel() { return Math.max(0, $('ed-video').currentTime - ED.clip.start_s); }
-
 function drawOverlay() {
   if (!ED.clip || !$('view-editor').classList.contains('on')) return;
   gcDrawCanvases();
-  const c = ED.clip;
   const st = edStyle();
   if (!st) return;
   const t = edRel();
+  const dur = edTotalDur();
   const stage = $('ed-stage');
   const H = stage.clientHeight;
   const land = ED.format === 'landscape';
@@ -961,7 +1193,6 @@ function drawOverlay() {
   cap.style.top = `${y * 100}%`;
   if ($('ed-subs').checked) {
     const groups = groupWords(edActiveWords(), Math.max(1, st.words_per_line || 3));
-    const dur = c.end_s - c.start_s;
     for (let gi = 0; gi < groups.length; gi++) {
       const g = groups[gi];
       const nxt = gi + 1 < groups.length ? groups[gi + 1][0].s : dur;
@@ -1000,17 +1231,36 @@ function drawOverlay() {
     ti.append(sp);
   }
   $('ed-seek').value = t.toFixed(2);
-  $('ed-time').textContent = `${fmtDur(t)} / ${fmtDur(c.end_s - c.start_s)}`;
+  $('ed-time').textContent = `${fmtDur(t)} / ${fmtDur(dur)}`;
   document.querySelectorAll('#ed-words input').forEach((inp) => {
     inp.classList.toggle('now', t >= Number(inp.dataset.s) && t < Number(inp.dataset.e));
   });
+  if (edIsCompiled()) {
+    document.querySelectorAll('#ed-segs-list .seg-item').forEach((row, i) => {
+      row.classList.toggle('now', i === ED.curSeg);
+    });
+  }
 }
 
 function edLoop() {
   const v = $('ed-video');
-  if (ED.clip && v.currentTime >= ED.clip.end_s) {
-    v.pause();
-    v.currentTime = ED.clip.start_s;
+  if (ED.clip) {
+    if (edIsCompiled()) {
+      const sg = ED.segments[ED.curSeg] || ED.segments[0];
+      if (v.currentTime >= sg.e) {
+        if (ED.curSeg + 1 < ED.segments.length) {
+          ED.curSeg += 1;
+          v.currentTime = ED.segments[ED.curSeg].s;
+        } else {
+          v.pause();
+          ED.curSeg = 0;
+          v.currentTime = ED.segments[0].s;
+        }
+      }
+    } else if (v.currentTime >= ED.end_s) {
+      v.pause();
+      v.currentTime = ED.start_s;
+    }
   }
   drawOverlay();
   if (!v.paused) ED.raf = requestAnimationFrame(edLoop);
@@ -1019,14 +1269,26 @@ function edLoop() {
 $('ed-play').onclick = () => {
   const v = $('ed-video');
   if (v.paused) {
-    if (v.currentTime < ED.clip.start_s || v.currentTime >= ED.clip.end_s) v.currentTime = ED.clip.start_s;
+    if (edIsCompiled()) {
+      const sg = ED.segments[ED.curSeg] || ED.segments[0];
+      if (v.currentTime < sg.s || v.currentTime >= sg.e) {
+        ED.curSeg = 0;
+        v.currentTime = ED.segments[0].s;
+      }
+    } else if (v.currentTime < ED.start_s || v.currentTime >= ED.end_s) {
+      v.currentTime = ED.start_s;
+    }
     v.play().catch(() => {});
   } else v.pause();
 };
 $('ed-video').addEventListener('play', () => { $('ed-play').textContent = 'Jeda'; ED.raf = requestAnimationFrame(edLoop); });
 $('ed-video').addEventListener('pause', () => { $('ed-play').textContent = 'Putar'; cancelAnimationFrame(ED.raf); drawOverlay(); });
 $('ed-video').addEventListener('seeked', drawOverlay);
-$('ed-seek').addEventListener('input', () => { $('ed-video').currentTime = ED.clip.start_s + Number($('ed-seek').value); });
+$('ed-seek').addEventListener('input', () => {
+  const m = edMapRelToSrc(Number($('ed-seek').value));
+  ED.curSeg = m.segIdx;
+  $('ed-video').currentTime = m.srcT;
+});
 ['ed-title', 'ed-title-ov', 'ed-subs'].forEach((id) => $(id).addEventListener('input', drawOverlay));
 window.addEventListener('resize', () => { gcRenderBoxes(); drawOverlay(); });
 
@@ -1042,7 +1304,10 @@ function renderWords() {
       inp.classList.toggle('edited', v.trim() !== '' && v !== w.orig);
       inp.classList.toggle('deleted', v.trim() === '');
     };
-    inp.addEventListener('focus', () => { $('ed-video').currentTime = ED.clip.start_s + w.s + 0.01; });
+    inp.addEventListener('focus', () => {
+      if (w.seg != null) ED.curSeg = w.seg;
+      $('ed-video').currentTime = (w.src_s != null ? w.src_s : ED.start_s + w.s) + 0.01;
+    });
     inp.addEventListener('input', () => {
       if (inp.value === w.orig) delete ED.overrides[w.i];
       else ED.overrides[w.i] = inp.value;
@@ -1154,18 +1419,19 @@ $('ed-regen').onclick = async () => {
 async function edSave(render) {
   if (ED.styleId === '__draft') return toast('Simpan preset baru dulu, atau pilih salah satu preset.', true);
   if (gcIsManual()) gcEnsureBoxes();
+  const payload = {
+    hook_title: $('ed-title').value, title_overlay: $('ed-title-ov').checked, subtitle_on: $('ed-subs').checked,
+    caption_style_id: ED.styleId, caption_overrides: ED.overrides,
+    format: ED.format, face_tracking: $('ed-face').checked, gaming_split: Number($('ed-split').value) / 100,
+    gaming_crop: ED.gamingCrop,
+    hook_clip_on: $('ed-hook-clip').checked,
+    peak_s: Number($('ed-peak').value),
+    start_s: ED.start_s,
+    end_s: ED.end_s,
+  };
+  if (edIsCompiled()) payload.segments = ED.segments;
   try {
-    await api(`/clips/${ED.clip.id}`, {
-      method: 'PATCH',
-      body: {
-        hook_title: $('ed-title').value, title_overlay: $('ed-title-ov').checked, subtitle_on: $('ed-subs').checked,
-        caption_style_id: ED.styleId, caption_overrides: ED.overrides,
-        format: ED.format, face_tracking: $('ed-face').checked, gaming_split: Number($('ed-split').value) / 100,
-        gaming_crop: ED.gamingCrop,
-        hook_clip_on: $('ed-hook-clip').checked,
-        peak_s: Number($('ed-peak').value),
-      },
-    });
+    await api(`/clips/${ED.clip.id}`, { method: 'PATCH', body: payload });
     if (render) {
       await api(`/clips/${ED.clip.id}/render`, { method: 'POST' });
       toast(`Klip #${ED.clip.rank} masuk antrian render.`);

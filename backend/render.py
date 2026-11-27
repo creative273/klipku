@@ -174,14 +174,73 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None, gamin
     raise ValueError(f"format tidak dikenal: {fmt}")
 
 
+def parse_clip_segments(clip: dict) -> list[dict]:
+    """Parse kolom clips.segments (JSON/list) menjadi daftar [{"s": float, "e": float, "note": str}, ...]."""
+    import json
+    raw = clip.get("segments")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "[]")
+        except ValueError:
+            raw = []
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        try:
+            if isinstance(item, dict):
+                s, e = float(item["s"]), float(item["e"])
+                note = str(item.get("note") or "")[:80].strip()
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                s, e = float(item[0]), float(item[1])
+                note = ""
+            else:
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        if s >= 0 and e - s >= 0.4:
+            out.append({"s": round(s, 3), "e": round(e, 3), "note": note})
+    return out
+
+
 def clip_segments(clip: dict, source_dur: float | None = None) -> list[tuple[float, float]]:
     """Kembalikan daftar segmen sumber [(s, e), ...] untuk klip.
 
+    - Kompilasi (segments tidak kosong): daftar potongan [(s1, e1), (s2, e2), ...].
+      Jika hook_clip_on juga aktif (>=2 segmen), tambahkan teaser 5 dtk dari peak_s di awal bila belum di awal.
     - Normal: [(start_s, end_s)]
     - Hook 5 dtk di depan (hook_clip_on=1):
       [(h_start, h_end), (m_start, m_end)]
       = 5 detik momen viral/heatmap di awal, lalu sisa durasinya adalah momen tepat sebelum kejadian itu.
     """
+    custom = parse_clip_segments(clip)
+    if custom:
+        max_e = max(x["e"] for x in custom)
+        src_dur = float(source_dur) if source_dur and source_dur > 0 else max_e
+        segs = []
+        for x in custom:
+            s = max(0.0, min(x["s"], src_dur))
+            e = max(0.0, min(x["e"], src_dur))
+            if e - s >= 0.4:
+                segs.append((round(s, 3), round(e, 3)))
+        if segs:
+            if clip.get("hook_clip_on") and len(segs) >= 2:
+                peak = clip.get("peak_s")
+                if peak is not None:
+                    pk = float(peak)
+                    # jika peak berada di segmen selain segmen pertama, taruh teaser 5 dtk di depan
+                    first_s, first_e = segs[0]
+                    if not (first_s <= pk < first_e):
+                        h_s = max(0.0, min(pk, max(0.0, src_dur - 2.5)))
+                        h_e = min(src_dur, h_s + 5.0)
+                        for ss, se in segs:
+                            if ss <= pk < se:
+                                h_e = min(se, h_s + 5.0)
+                                break
+                        if h_e - h_s >= 1.5:
+                            segs = [(round(h_s, 3), round(h_e, 3)), *segs]
+            return segs
+
     start, end = float(clip["start_s"]), float(clip["end_s"])
     total = max(3.0, end - start)
     if not clip.get("hook_clip_on") or total < 10.0:
@@ -215,32 +274,35 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
     W, H = out_size(fmt, clip["resolution"])
     gc = json.loads(clip.get("gaming_crop") or "{}")
     segs = clip_segments(clip, source_dur)
-    is_hook = len(segs) == 2
+    multi = len(segs) >= 2
     graph, cap_pos = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40), analysis, gaming_crop=gc)
-    start, end = clip["start_s"], clip["end_s"]
+    start, end = float(clip["start_s"]), float(clip["end_s"])
     dur = sum(max(0.0, e - s) for s, e in segs)
 
-    if is_hook:
-        (hs, he), (ms, me) = segs
-        hd = max(0.2, he - hs)
-        md = max(0.2, me - ms)
-        fade_out_st = max(0.0, hd - 0.02)
-        prefix = (
-            f"[0:v]setpts=PTS-STARTPTS[hv];"
-            f"[0:a:0]asetpts=PTS-STARTPTS,afade=t=out:st={fade_out_st:.3f}:d=0.02[ha];"
-            f"[1:v]setpts=PTS-STARTPTS[mv];"
-            f"[1:a:0]asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.02[ma];"
-            f"[hv][ha][mv][ma]concat=n=2:v=1:a=1[rawv][aout];"
-        )
+    if multi:
+        input_args = []
+        pre = []
+        concat_in = []
+        n = len(segs)
+        for k, (ss, se) in enumerate(segs):
+            d = max(0.2, se - ss)
+            input_args.extend(["-ss", f"{ss:.3f}", "-t", f"{d:.3f}", "-i", src])
+            pre.append(f"[{k}:v]setpts=PTS-STARTPTS[sv{k}]")
+            af = ["asetpts=PTS-STARTPTS"]
+            if d > 0.08:
+                if k > 0:
+                    af.append("afade=t=in:st=0:d=0.02")
+                if k < n - 1:
+                    af.append(f"afade=t=out:st={max(0.0, d - 0.02):.3f}:d=0.02")
+            pre.append(f"[{k}:a:0]{','.join(af)}[sa{k}]")
+            concat_in.append(f"[sv{k}][sa{k}]")
+        prefix = ";".join(pre) + ";" + "".join(concat_in) + f"concat=n={n}:v=1:a=1[rawv][aout];"
         graph = prefix + graph.replace("[0:v]", "[rawv]", 1)
-        input_args = [
-            "-ss", f"{hs:.3f}", "-t", f"{hd:.3f}", "-i", src,
-            "-ss", f"{ms:.3f}", "-t", f"{md:.3f}", "-i", src,
-        ]
         audio_map = "[aout]"
-        wm_idx = 2
+        wm_idx = n
     else:
-        input_args = ["-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src]
+        ss, se = segs[0]
+        input_args = ["-ss", f"{ss:.3f}", "-t", f"{max(0.2, se - ss):.3f}", "-i", src]
         audio_map = "0:a:0"
         wm_idx = 1
 

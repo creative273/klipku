@@ -27,7 +27,7 @@ import styles  # noqa: E402
 from config import DENO, FFMPEG, GITHUB_REPO, PROVIDERS, TOKEN, YUNET  # noqa: E402
 from server_util import first_line, run  # noqa: E402
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -304,6 +304,8 @@ class SessionIn(BaseModel):
     caption_style_id: str | None = None
     title_overlay: bool = False
     hook_clip_on: bool = False
+    prompt: str | None = None
+    compile_mode: bool = False
 
 
 FORMATS = {"face916", "blurbg916", "square", "landscape", "gaming916"}
@@ -443,12 +445,35 @@ def _clean_gaming_crop(raw) -> str:
     return json.dumps(out)
 
 
+def _clean_segments(raw, max_dur: float | None = None) -> list[dict]:
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw[:30]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            s = max(0.0, float(item["s"]))
+            e = max(0.0, float(item["e"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if max_dur and max_dur > 0:
+            s = min(s, max_dur)
+            e = min(e, max_dur)
+        if e - s < 0.5:
+            continue
+        note = str(item.get("note") or "")[:80].strip()
+        out.append({"s": round(s, 3), "e": round(e, 3), "note": note})
+    return out
+
+
 class ClipPatch(BaseModel):
     caption_style_id: str | None = None
     caption_overrides: dict[str, str] | None = None
     title_overlay: bool | None = None
     hook_clip_on: bool | None = None
     peak_s: float | None = None
+    segments: list[dict] | None = None
     hook_title: str | None = None
     face_tracking: bool | None = None
     format: str | None = None
@@ -465,6 +490,8 @@ def patch_clip(cid: str, body: ClipPatch):
     c = db.one("SELECT * FROM clips WHERE id=?", (cid,))
     if not c:
         raise HTTPException(404, "klip tidak ada")
+    sess = db.one("SELECT duration_s FROM sessions WHERE id=?", (c["session_id"],))
+    max_dur = float(sess["duration_s"]) if sess and sess.get("duration_s") else None
     data = body.model_dump(exclude_unset=True)
     if "format" in data and data["format"] not in FORMATS:
         raise HTTPException(400, "format tidak dikenal")
@@ -477,7 +504,10 @@ def patch_clip(cid: str, body: ClipPatch):
     if "hook_clip_on" in data:
         data["hook_clip_on"] = 1 if data["hook_clip_on"] else 0
     if "peak_s" in data and data["peak_s"] is not None:
-        data["peak_s"] = max(0.0, round(float(data["peak_s"]), 3))
+        pk = max(0.0, round(float(data["peak_s"]), 3))
+        if max_dur and max_dur > 0:
+            pk = min(pk, max_dur)
+        data["peak_s"] = pk
     if "gaming_crop" in data:
         data["gaming_crop"] = _clean_gaming_crop(data["gaming_crop"])
     if "caption_overrides" in data:
@@ -488,13 +518,28 @@ def patch_clip(cid: str, body: ClipPatch):
         raise HTTPException(400, "preset caption tidak ada")
     if "hook_title" in data:
         data["hook_title"] = (data["hook_title"] or "").strip()[:100] or c["hook_title"]
-    if "start_s" in data or "end_s" in data:
-        s_ = data.get("start_s", c["start_s"])
-        e_ = data.get("end_s", c["end_s"])
-        if s_ < 0 or e_ - s_ < 3:
+    if "segments" in data:
+        segs = _clean_segments(data["segments"] or [], max_dur=max_dur)
+        if data["segments"] and not segs:
+            raise HTTPException(400, "Minimal 1 potongan segmen valid (>= 0.5 detik)")
+        data["segments"] = json.dumps(segs, ensure_ascii=False)
+        if segs:
+            if sum(x["e"] - x["s"] for x in segs) < 1.5:
+                raise HTTPException(400, "Total durasi potongan minimal 1.5 detik")
+            data["start_s"] = min(x["s"] for x in segs)
+            data["end_s"] = max(max(x["e"] for x in segs), data["start_s"] + 0.5)
+    elif "start_s" in data or "end_s" in data:
+        s_ = round(max(0.0, float(data.get("start_s", c["start_s"]))), 3)
+        e_ = round(max(0.0, float(data.get("end_s", c["end_s"]))), 3)
+        if max_dur and max_dur > 0:
+            s_ = min(s_, max(0.0, max_dur - 3.0))
+            e_ = min(e_, max_dur)
+        if e_ - s_ < 3.0:
             raise HTTPException(400, "Durasi klip minimal 3 detik")
+        data["start_s"] = s_
+        data["end_s"] = e_
     db.update("clips", cid, data)
-    if any(k in data for k in ("start_s", "end_s", "hook_clip_on", "peak_s")):
+    if any(k in data for k in ("start_s", "end_s", "hook_clip_on", "peak_s", "segments")):
         db.exec_("DELETE FROM crop_tracks WHERE clip_id=?", (cid,))  # rentang/susunan berubah: analisis ulang
     return db.one("SELECT * FROM clips WHERE id=?", (cid,))
 
@@ -531,24 +576,65 @@ def render_clip(cid: str):
 
 
 @app.get("/clips/{cid}/words")
-def clip_words(cid: str):
-    """Kata-kata di rentang klip (indeks global transkrip), waktu relatif ke awal klip."""
+def clip_words(cid: str, start_s: float | None = None, end_s: float | None = None, segments: str | None = None):
+    """Kata-kata di rentang klip atau daftar segmen kompilasi, waktu relatif ke timeline klip."""
     c = db.one("SELECT * FROM clips WHERE id=?", (cid,))
     if not c:
         raise HTTPException(404, "klip tidak ada")
     s = db.one("SELECT width, height, duration_s FROM sessions WHERE id=?", (c["session_id"],))
+    max_dur = float(s["duration_s"]) if s and s.get("duration_s") else None
     tr = db.one("SELECT words FROM transcripts WHERE session_id=?", (c["session_id"],))
     ct = db.one("SELECT path FROM crop_tracks WHERE clip_id=?", (cid,))
     fc = json.loads(ct["path"]).get("facecam") if ct else None
     words = json.loads(tr["words"]) if tr else []
     ov = json.loads(c["caption_overrides"] or "{}")
+
+    use_segs = []
+    if segments is not None:
+        try:
+            use_segs = _clean_segments(json.loads(segments), max_dur=max_dur)
+        except ValueError:
+            use_segs = []
+    elif start_s is None and end_s is None:
+        try:
+            use_segs = _clean_segments(json.loads(c.get("segments") or "[]"), max_dur=max_dur)
+        except ValueError:
+            use_segs = []
+
     out = []
-    for i, w in enumerate(words):
-        if w["e"] <= c["start_s"] or w["s"] >= c["end_s"]:
-            continue
-        out.append({"i": i, "orig": w["t"], "t": ov.get(str(i), w["t"]),
-                    "s": round(max(w["s"], c["start_s"]) - c["start_s"], 3),
-                    "e": round(min(w["e"], c["end_s"]) - c["start_s"], 3)})
+    if use_segs:
+        offset = 0.0
+        for si, sg in enumerate(use_segs):
+            ss, se = sg["s"], sg["e"]
+            for i, w in enumerate(words):
+                if w["e"] <= ss or w["s"] >= se:
+                    continue
+                ws = max(w["s"], ss)
+                we = min(w["e"], se)
+                out.append({
+                    "i": i, "orig": w["t"], "t": ov.get(str(i), w["t"]),
+                    "s": round(offset + (ws - ss), 3),
+                    "e": round(offset + (we - ss), 3),
+                    "src_s": round(ws, 3),
+                    "seg": si,
+                })
+            offset += max(0.0, se - ss)
+    else:
+        cs = max(0.0, float(start_s)) if start_s is not None else float(c["start_s"])
+        ce = max(cs + 0.5, float(end_s)) if end_s is not None else float(c["end_s"])
+        if max_dur and max_dur > 0:
+            ce = min(ce, max_dur)
+        for i, w in enumerate(words):
+            if w["e"] <= cs or w["s"] >= ce:
+                continue
+            ws = max(w["s"], cs)
+            we = min(w["e"], ce)
+            out.append({
+                "i": i, "orig": w["t"], "t": ov.get(str(i), w["t"]),
+                "s": round(ws - cs, 3),
+                "e": round(we - cs, 3),
+                "src_s": round(ws, 3),
+            })
     return {
         "clip": c, "words": out, "style": styles.get(c["caption_style_id"]),
         "source": {
