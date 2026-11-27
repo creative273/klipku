@@ -85,14 +85,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $assets = @((Get-ChildItem dist\*.exe | ForEach-Object { $_.FullName }) + @((Resolve-Path dist\SHA256SUMS.txt).Path))
+          $exe = (Get-ChildItem dist\*.exe | Select-Object -First 1).FullName
+          $sum = (Resolve-Path dist\SHA256SUMS.txt).Path
           $ErrorActionPreference = 'Continue'
           gh release view $tag *> $null
           $exists = ($LASTEXITCODE -eq 0)
           $ErrorActionPreference = 'Stop'
           if ($exists) {
-            gh release upload $tag @assets --clobber
+            gh release upload $tag "$exe" "$sum" --clobber
           } else {
-            gh release create $tag @assets --title "Klipku $tag" --generate-notes
+            gh release create $tag "$exe" "$sum" --title "Klipku $tag" --generate-notes
           }
           if ($LASTEXITCODE -ne 0) { throw "Gagal publish GitHub Release $tag" }
