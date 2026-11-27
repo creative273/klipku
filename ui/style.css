@@ -237,6 +237,48 @@ b { font-weight: 600; }
   flex-direction: column;
   gap: 10px;
 }
+.update-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: var(--teal-soft);
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  box-shadow: var(--specular);
+  color: #99f6e4;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.update-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.update-btn:hover {
+  background: rgba(45, 212, 191, 0.22);
+  border-color: rgba(45, 212, 191, 0.38);
+  transform: translateY(-1px);
+}
+.up-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: var(--glass-input);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.up-box .hint { margin: 0; }
 .support-btn {
   display: flex;
   align-items: center;
@@ -1054,8 +1096,8 @@ td { padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: top
   .nav { justify-content: center; padding: 10px; }
   .brand { justify-content: center; padding: 0 0 18px; }
   .active-job .aj-title, .aj-label { display: none; }
-  .support-btn { justify-content: center; padding: 10px; }
-  .support-btn span { display: none; }
+  .support-btn, .update-btn { justify-content: center; padding: 10px; }
+  .support-btn span, .update-btn span { display: none; }
   .ver { text-align: center; padding: 0; font-size: 11px; }
   main { padding: 22px; }
   .editor { grid-template-columns: 1fr; }

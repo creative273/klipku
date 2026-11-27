@@ -34,6 +34,10 @@
     <span class="meter"><span id="aj-bar"></span></span>
   </button>
   <div class="side-foot">
+    <button class="update-btn hidden" id="side-update" type="button" title="Update Klipku ke versi terbaru">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+      <span id="side-update-lbl">Update tersedia</span>
+    </button>
     <button class="support-btn" id="open-support" type="button" title="Dukung kreator via YouTube atau Saweria">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7-4.4-9-8.6C1.4 8.5 3.6 5 7.2 5c2 0 3.6 1 4.8 2.6C13.2 6 14.8 5 16.8 5c3.6 0 5.8 3.5 4.2 6.9-2 4.2-9 8.6-9 8.6Z"/></svg>
       <span>Dukung Kreator</span>
@@ -397,17 +401,28 @@
       <h2>Folder hasil</h2>
       <div class="row"><code id="outdir"></code><button class="ghost sm" id="pick-out">Ganti folder</button></div>
     </div>
-    <div class="panel">
+    <div class="panel" id="panel-engine">
       <h2>Mesin aplikasi</h2>
       <div class="row between">
         <div class="min0">
           <b>Versi Klipku</b> <span id="app-ver-status" class="hint">Memuat versi…</span>
-          <p class="hint">Cek apakah ada rilis Klipku yang lebih baru di GitHub.</p>
+          <p class="hint">Unduh &amp; pasang pembaruan Klipku langsung dari dalam aplikasi (terverifikasi SHA256).</p>
         </div>
         <div class="row">
-          <button class="primary sm hidden" id="app-download-update" type="button">Unduh versi baru ↗</button>
+          <button class="primary sm hidden" id="app-download-update" type="button">Update sekarang</button>
+          <button class="primary sm hidden" id="app-install-update" type="button">Pasang &amp; restart</button>
           <button class="ghost sm" id="app-check-update" type="button">Cek versi terbaru</button>
         </div>
+      </div>
+      <div class="up-box hidden" id="app-up-box">
+        <div class="row between">
+          <span class="hint" id="app-up-text">Mengunduh pembaruan…</span>
+          <div class="row">
+            <b class="tnum" id="app-up-pct">0%</b>
+            <button class="ghost xs hidden" id="app-up-cancel" type="button">Batal</button>
+          </div>
+        </div>
+        <span class="meter big"><span id="app-up-bar"></span></span>
       </div>
       <div class="row between sep">
         <div><b>yt-dlp</b> <span id="yt-ver" class="hint">Mengecek versi…</span><p class="hint">Kalau download YouTube mulai gagal, update dulu lalu buka ulang app.</p></div>

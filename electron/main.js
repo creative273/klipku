@@ -115,6 +115,21 @@ ipcMain.handle('dialog:pickImage', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('app:relaunch', () => { stopBackend(); app.relaunch(); app.exit(0); });
+ipcMain.handle('app:installUpdate', (_e, installerPath) => {
+  const updatesDir = path.resolve(path.join(app.getPath('appData'), 'Klipku', 'updates'));
+  const target = path.resolve(String(installerPath || ''));
+  const rel = path.relative(updatesDir, target);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || !target.toLowerCase().endsWith('.exe') || !fs.existsSync(target)) {
+    throw new Error('File installer update tidak valid.');
+  }
+  stopBackend();
+  setTimeout(() => {
+    const child = spawn(target, [], { detached: true, stdio: 'ignore' });
+    child.unref();
+    app.exit(0);
+  }, 250);
+  return { ok: true };
+});
 ipcMain.handle('dialog:pickFolder', async () => {
   const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
   return r.canceled ? null : r.filePaths[0];

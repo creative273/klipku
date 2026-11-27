@@ -8,7 +8,7 @@
 
   <p>
     <a href="https://github.com/creative273/klipku/releases/latest">
-      <img src="https://img.shields.io/badge/Download-Windows%20x64%20(v1.1.0)-F5B301?style=for-the-badge&logo=windows&logoColor=140E00" alt="Download Windows x64" />
+      <img src="https://img.shields.io/badge/Download-Windows%20x64%20(v1.2.0)-F5B301?style=for-the-badge&logo=windows&logoColor=140E00" alt="Download Windows x64" />
     </a>
     <a href="https://www.youtube.com/@misterisia?sub_confirmation=1">
       <img src="https://img.shields.io/badge/YouTube-@misterisia-EF4444?style=for-the-badge&logo=youtube&logoColor=white" alt="Subscribe YouTube @misterisia" />
@@ -72,7 +72,7 @@ Resolusi output tersedia mulai dari **720p**, **1080p**, **2K**, hingga **4K**.
 ## Cara Mulai dalam 3 Menit
 
 ### 1. Download & Install
-1. Buka halaman **[Releases](https://github.com/creative273/klipku/releases/latest)** (atau tab **[Actions](https://github.com/creative273/klipku/actions)** untuk build terbaru) lalu unduh **`Klipku-Setup-1.1.0-win-x64.exe`**.
+1. Buka halaman **[Releases](https://github.com/creative273/klipku/releases/latest)** (atau tab **[Actions](https://github.com/creative273/klipku/actions)** untuk build terbaru) lalu unduh **`Klipku-Setup-1.2.0-win-x64.exe`**.
 2. Jalankan installer seperti biasa (semua mesin Python, FFmpeg, Deno, dan model deteksi wajah sudah ikut di dalam installer — tidak perlu install apa pun lagi).
    > **Catatan Windows SmartScreen:** Karena aplikasi ini gratis & open-source (belum menggunakan sertifikat berbayar), Windows mungkin menampilkan *"Windows protected your PC"*. Klik **More info → Run anyway** untuk melanjutkan.
 
@@ -108,8 +108,8 @@ Buka menu **Pengaturan** di dalam Klipku:
 </details>
 
 <details>
-<summary><b>Bagaimana cara tahu kalau ada versi Klipku terbaru?</b></summary>
-<p>Buka <b>Pengaturan → Mesin aplikasi → Cek versi terbaru</b>. Jika ada rilis baru di GitHub, tombol unduh akan langsung muncul.</p>
+<summary><b>Bagaimana cara update Klipku ke versi terbaru?</b></summary>
+<p>Klipku otomatis mengecek pembaruan saat dibuka (muncul notifikasi di sidebar kiri bawah), atau kamu bisa buka <b>Pengaturan → Mesin aplikasi → Cek versi terbaru</b> lalu klik <b>Update sekarang</b> untuk mengunduh (terverifikasi SHA256) dan memasang pembaruan langsung dari dalam aplikasi.</p>
 </details>
 
 ---

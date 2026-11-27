@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('klipku', {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   pickImage: () => ipcRenderer.invoke('dialog:pickImage'),
   relaunch: () => ipcRenderer.invoke('app:relaunch'),
+  installUpdate: (p) => ipcRenderer.invoke('app:installUpdate', p),
   // path asli file yang di-drag ke jendela (Electron 32+)
   pathForFile: (file) => webUtils.getPathForFile(file),
 });

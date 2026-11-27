@@ -27,7 +27,7 @@ import styles  # noqa: E402
 from config import DENO, FFMPEG, GITHUB_REPO, PROVIDERS, TOKEN, YUNET  # noqa: E402
 from server_util import first_line, run  # noqa: E402
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -230,51 +230,44 @@ def ytdlp_do_update():
         raise HTTPException(400, f"Update yt-dlp gagal: {e}") from None
 
 
-def _ver_tuple(v: str | None) -> tuple[int, ...]:
-    import re
-    nums = [int(x) for x in re.findall(r"\d+", (v or "").lstrip("vV"))]
-    return tuple(nums[:4]) if nums else (0,)
-
-
 @app.get("/engine/app-update")
 def check_app_update():
-    """Cek versi terbaru Klipku dari GitHub Releases."""
+    """Cek versi terbaru Klipku & aset installer dari GitHub Releases."""
+    import app_update
     import httpx
-    releases_url = f"https://github.com/{GITHUB_REPO}/releases"
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": f"Klipku/{VERSION}"}
     try:
-        r = httpx.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
-                      headers=headers, timeout=15, follow_redirects=True)
-        if r.status_code == 404:
-            # belum ada GitHub Release: coba cek tag terbaru
-            rt = httpx.get(f"https://api.github.com/repos/{GITHUB_REPO}/tags?per_page=1",
-                           headers=headers, timeout=15, follow_redirects=True)
-            tags = rt.json() if rt.status_code == 200 else []
-            if not tags:
-                return {"current": VERSION, "latest": None, "has_update": False, "url": releases_url,
-                        "message": "Belum ada rilis publik di GitHub."}
-            tag = (tags[0].get("name") or "").lstrip("vV")
-            has_update = _ver_tuple(tag) > _ver_tuple(VERSION)
-            return {"current": VERSION, "latest": tag, "has_update": has_update,
-                    "url": f"https://github.com/{GITHUB_REPO}/releases/tag/{tags[0].get('name')}"}
-        if r.status_code == 403:
-            raise HTTPException(503, "Batas cek GitHub tercapai, coba lagi beberapa menit lagi.")
-        r.raise_for_status()
-        rel = r.json()
-        latest = (rel.get("tag_name") or rel.get("name") or "").lstrip("vV")
-        has_update = bool(latest) and _ver_tuple(latest) > _ver_tuple(VERSION)
-        return {
-            "current": VERSION,
-            "latest": latest or VERSION,
-            "has_update": has_update,
-            "url": rel.get("html_url") or releases_url,
-            "name": rel.get("name") or (f"v{latest}" if latest else ""),
-            "published_at": rel.get("published_at"),
-        }
-    except HTTPException:
-        raise
+        info = app_update.check(VERSION)
+        info["download"] = app_update.status()
+        return info
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from None
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Tidak bisa terhubung ke GitHub: {e}") from None
+
+
+@app.post("/engine/app-update/download")
+def start_app_update_download():
+    import app_update
+    import httpx
+    try:
+        return app_update.start_download(VERSION)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from None
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Tidak bisa terhubung ke GitHub: {e}") from None
+
+
+@app.get("/engine/app-update/status")
+def app_update_status():
+    import app_update
+    return app_update.status()
+
+
+@app.post("/engine/app-update/cancel")
+def cancel_app_update():
+    import app_update
+    app_update.cancel()
+    return app_update.status()
 
 
 @app.post("/settings/test-key/{provider}")

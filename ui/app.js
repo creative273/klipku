@@ -1257,45 +1257,173 @@ $('yt-update').onclick = async () => {
   loadYtdlp();
 };
 
-// ---------- Pengaturan: cek versi terbaru Klipku ----------
+// ---------- Pengaturan: auto-update Klipku di dalam aplikasi ----------
 
-let latestReleaseUrl = '';
-$('app-check-update').onclick = async () => {
+const APP_UP = { info: null, dl: null, timer: null };
+
+function fmtMb(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderAppUpdate() {
+  const info = APP_UP.info;
+  const dl = APP_UP.dl || { state: 'idle' };
+  const st = $('app-ver-status');
+  const dlBtn = $('app-download-update');
+  const instBtn = $('app-install-update');
+  const box = $('app-up-box');
+  const txt = $('app-up-text');
+  const pct = $('app-up-pct');
+  const bar = $('app-up-bar');
+  const cancelBtn = $('app-up-cancel');
+  const sideBtn = $('side-update');
+  const sideLbl = $('side-update-lbl');
+
+  const hasUp = Boolean(info && info.has_update && info.latest);
+  const busy = dl.state === 'downloading' || dl.state === 'verifying';
+  const ready = dl.state === 'ready' && Boolean(dl.installer_path);
+
+  if (hasUp || busy || ready) {
+    sideBtn.classList.remove('hidden');
+    if (dl.state === 'downloading') sideLbl.textContent = `Mengunduh ${Math.floor(dl.pct || 0)}%`;
+    else if (dl.state === 'verifying') sideLbl.textContent = 'Memverifikasi…';
+    else if (ready) sideLbl.textContent = `Pasang v${dl.version || info.latest}`;
+    else sideLbl.textContent = `Update v${info.latest}`;
+  } else {
+    sideBtn.classList.add('hidden');
+  }
+
+  if (info) {
+    st.dataset.checked = '1';
+    if (hasUp) {
+      const sz = info.asset_size ? ` · ${fmtMb(info.asset_size)}` : '';
+      st.textContent = `Tersedia v${info.latest} (terpasang v${info.current}${sz})`;
+      st.className = 'ok';
+    } else if (!info.latest) {
+      st.textContent = `Versi ${info.current} · ${info.message || 'Belum ada rilis di GitHub'}`;
+      st.className = 'hint';
+    } else {
+      st.textContent = `Versi ${info.current} (sudah terbaru)`;
+      st.className = 'ok';
+    }
+  }
+
+  dlBtn.classList.toggle('hidden', !hasUp || busy || ready);
+  if (hasUp) dlBtn.textContent = info.can_download ? 'Update sekarang' : 'Buka rilis ↗';
+  instBtn.classList.toggle('hidden', !ready);
+  $('app-check-update').disabled = busy;
+
+  const showBox = busy || ready || dl.state === 'error';
+  box.classList.toggle('hidden', !showBox);
+  cancelBtn.classList.toggle('hidden', dl.state !== 'downloading');
+  if (dl.state === 'downloading') {
+    const prog = dl.total ? `${fmtMb(dl.bytes || 0)} / ${fmtMb(dl.total)}` : fmtMb(dl.bytes || 0);
+    txt.textContent = `Mengunduh Klipku v${dl.version} · ${prog}`;
+    txt.className = 'hint';
+    pct.textContent = `${Math.floor(dl.pct || 0)}%`;
+    bar.style.width = `${dl.pct || 0}%`;
+  } else if (dl.state === 'verifying') {
+    txt.textContent = `Memverifikasi checksum SHA256 v${dl.version}…`;
+    txt.className = 'hint';
+    pct.textContent = '99%';
+    bar.style.width = '99%';
+  } else if (ready) {
+    txt.textContent = `Klipku v${dl.version} siap dipasang (terverifikasi SHA256).`;
+    txt.className = 'ok hint';
+    pct.textContent = '100%';
+    bar.style.width = '100%';
+  } else if (dl.state === 'error') {
+    txt.textContent = dl.error || 'Unduhan pembaruan gagal.';
+    txt.className = 'bad hint';
+    pct.textContent = '';
+    bar.style.width = '0%';
+  }
+}
+
+async function pollAppUpdate() {
+  clearTimeout(APP_UP.timer);
+  try {
+    APP_UP.dl = await api('/engine/app-update/status');
+    renderAppUpdate();
+    if (APP_UP.dl.state === 'downloading' || APP_UP.dl.state === 'verifying') {
+      APP_UP.timer = setTimeout(pollAppUpdate, 500);
+    } else if (APP_UP.dl.state === 'ready') {
+      toast(`Klipku v${APP_UP.dl.version} selesai diunduh! Klik "Pasang & restart" untuk memperbarui.`);
+    } else if (APP_UP.dl.state === 'error') {
+      toast(APP_UP.dl.error || 'Unduh update gagal.', true);
+    }
+  } catch { /* abaikan error sementara */ }
+}
+
+async function checkAppUpdate(silent = false) {
   const b = $('app-check-update');
   const st = $('app-ver-status');
-  const dl = $('app-download-update');
-  b.disabled = true;
-  b.textContent = 'Mengecek…';
-  st.textContent = 'Menghubungi GitHub…';
-  st.className = 'hint';
-  dl.classList.add('hidden');
+  if (!silent) {
+    b.disabled = true;
+    b.textContent = 'Mengecek…';
+    st.textContent = 'Menghubungi GitHub…';
+    st.className = 'hint';
+  }
   try {
     const r = await api('/engine/app-update');
-    st.dataset.checked = '1';
-    latestReleaseUrl = r.url || '';
-    if (r.has_update && r.latest) {
-      st.textContent = `Tersedia v${r.latest} (terpasang v${r.current})`;
-      st.className = 'ok';
-      dl.classList.remove('hidden');
-      toast(`Versi baru Klipku v${r.latest} tersedia!`);
-    } else if (!r.latest) {
-      st.textContent = `Versi ${r.current} · ${r.message || 'Belum ada rilis di GitHub'}`;
-      toast(`Klipku v${r.current}. ${r.message || ''}`);
-    } else {
-      st.textContent = `Versi ${r.current} (sudah terbaru)`;
-      st.className = 'ok';
-      toast(`Klipku sudah versi terbaru (v${r.current}).`);
+    APP_UP.info = r;
+    if (r.download) APP_UP.dl = r.download;
+    renderAppUpdate();
+    if (APP_UP.dl && (APP_UP.dl.state === 'downloading' || APP_UP.dl.state === 'verifying')) pollAppUpdate();
+    if (!silent) {
+      if (r.has_update && r.latest) toast(`Versi baru Klipku v${r.latest} tersedia!`);
+      else if (!r.latest) toast(`Klipku v${r.current}. ${r.message || ''}`);
+      else toast(`Klipku sudah versi terbaru (v${r.current}).`);
     }
   } catch (e) {
-    st.textContent = `Versi ${APP_VERSION || '?'} · gagal cek update`;
-    st.className = 'bad hint';
-    toast(e.message, true);
+    if (!silent) {
+      st.textContent = `Versi ${APP_VERSION || '?'} · gagal cek update`;
+      st.className = 'bad hint';
+      toast(e.message, true);
+    }
   }
-  b.disabled = false;
-  b.textContent = 'Cek versi terbaru';
+  if (!silent) {
+    b.disabled = false;
+    b.textContent = 'Cek versi terbaru';
+  }
+}
+
+$('app-check-update').onclick = () => checkAppUpdate(false);
+$('app-download-update').onclick = async () => {
+  if (!APP_UP.info) return;
+  if (!APP_UP.info.can_download) {
+    if (APP_UP.info.url && K) K.openExternal(APP_UP.info.url);
+    return;
+  }
+  try {
+    APP_UP.dl = await api('/engine/app-update/download', { method: 'POST' });
+    renderAppUpdate();
+    pollAppUpdate();
+  } catch (e) { toast(e.message, true); }
 };
-$('app-download-update').onclick = () => {
-  if (latestReleaseUrl && K) K.openExternal(latestReleaseUrl);
+$('app-up-cancel').onclick = async () => {
+  try {
+    APP_UP.dl = await api('/engine/app-update/cancel', { method: 'POST' });
+    clearTimeout(APP_UP.timer);
+    renderAppUpdate();
+    toast('Unduhan update dibatalkan.');
+  } catch (e) { toast(e.message, true); }
+};
+$('app-install-update').onclick = async () => {
+  const path = APP_UP.dl && APP_UP.dl.installer_path;
+  if (!path || !K || !K.installUpdate) return;
+  if (ACTIVE_ID && !confirm('Sedang ada proses video berjalan. Tutup Klipku dan pasang update sekarang?')) return;
+  try {
+    toast('Menutup Klipku dan menjalankan installer pembaruan…');
+    await K.installUpdate(path);
+  } catch (e) { toast(e.message, true); }
+};
+$('side-update').onclick = () => {
+  show('settings');
+  setTimeout(() => {
+    const p = $('panel-engine');
+    if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 120);
 };
 
 // ---------- Layar awal & Dukung Kreator (YouTube + Saweria) ----------
@@ -1406,6 +1534,7 @@ async function init() {
       updateMoreSummary();
       pollActive();
       checkWelcome();
+      setTimeout(() => checkAppUpdate(true), 2500);
       return;
     } catch { await new Promise((r) => setTimeout(r, 500)); }
   }
