@@ -22,6 +22,7 @@ Tugasmu: dari transkrip bernomor, pilih momen yang paling layak jadi klip berdir
 Aturan memilih:
 - Klip harus utuh: punya awal yang langsung menarik dan akhir yang tuntas (bukan terpotong di tengah kalimat atau ide).
 - Kalimat pertama klip harus kuat sebagai hook: pernyataan berani, pertanyaan, angka, konflik, atau cerita yang langsung mulai.
+- Jika ada tanda [MOST REPLAYED XX%], prioritaskan momen yang mencakup bagian ramai tersebut beserta setup/konteks beberapa detik sebelumnya supaya ceritanya utuh.
 - Jangan pilih bagian sponsor, iklan, ajakan subscribe, salam pembuka, atau penutup.
 - Klip tidak boleh saling tumpang tindih.
 
@@ -30,10 +31,39 @@ Skor 0-100:
 - flow: seberapa utuh dan enak alurnya dari awal sampai akhir
 - value: seberapa berguna, lucu, mengejutkan, atau emosional isinya
 
+peak: nomor baris di dalam klip yang paling klimaks, paling heboh/lucu, atau paling viral (akan dipakai untuk potongan teaser 5 detik di awal).
 Judul hook: bahasa yang sama dengan transkrip, maksimal 60 karakter, gaya AIDA (menarik perhatian dan bikin penasaran), tanpa hashtag, tanpa emoji, tanpa clickbait palsu.
 
 Balas HANYA JSON dengan bentuk:
-{"clips":[{"start":<nomor baris awal>,"end":<nomor baris akhir>,"hook":<0-100>,"flow":<0-100>,"value":<0-100>,"title":"...","reason":"<1 kalimat alasan>"}]}"""
+{"clips":[{"start":<nomor baris awal>,"end":<nomor baris akhir>,"peak":<nomor baris klimaks>,"hook":<0-100>,"flow":<0-100>,"value":<0-100>,"title":"...","reason":"<1 kalimat alasan>"}]}"""
+
+
+def _heat_max(heatmap, s, e):
+    """Nilai heatmap maksimum (0..1) yang beririsan dengan rentang [s, e]."""
+    best = 0.0
+    for h in heatmap or ():
+        if h["e"] > s and h["s"] < e and h["v"] > best:
+            best = h["v"]
+    return best
+
+
+def _heatmap_peak_s(heatmap, s, e, hook_dur=5.0):
+    """Detik awal momen paling ramai (heatmap >= 0.55) di dalam [s, e], atau None."""
+    best_v, best_mid = 0.0, None
+    # utamakan puncak setelah 3 detik pertama supaya teaser benar-benar menampilkan klimaks
+    pref_s = s + min(3.0, max(0.0, (e - s) * 0.2))
+    for h in heatmap or ():
+        if h["e"] <= s or h["s"] >= e:
+            continue
+        mid = (max(h["s"], s) + min(h["e"], e)) / 2.0
+        bonus = 0.04 if mid >= pref_s else 0.0
+        if h["v"] + bonus > best_v:
+            best_v = h["v"] + bonus
+            best_mid = mid
+    if best_mid is None or best_v < 0.55:
+        return None
+    hi = max(s, e - hook_dur)
+    return round(max(s, min(hi, best_mid - hook_dur * 0.45)), 3)
 
 
 def build_units(words):
@@ -147,7 +177,7 @@ def fit_duration(units, a, b, lo, hi, total_dur):
     return a, b, start, end
 
 
-def detect(transcript, total_dur, clip_count, clip_duration, provider, model, key, job, emit):
+def detect(transcript, total_dur, clip_count, clip_duration, provider, model, key, job, emit, heatmap=None):
     if not key:
         raise RuntimeError(f"API key {PROVIDERS[provider]['label']} belum diisi. Buka Pengaturan.")
     units = build_units(transcript["words"])
@@ -157,7 +187,13 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
     cands = []
     failed = []
     for wi, idxs in enumerate(wins):
-        lines = "\n".join(f"[{i}] ({fmt_time(units[i]['s'])}) {units[i]['text']}" for i in idxs)
+        def fmt_line(i):
+            u = units[i]
+            hv = _heat_max(heatmap, u["s"], u["e"]) if heatmap else 0.0
+            tag = f" [MOST REPLAYED {round(hv * 100)}%]" if hv >= 0.65 else ""
+            return f"[{i}] ({fmt_time(u['s'])}){tag} {u['text']}"
+
+        lines = "\n".join(fmt_line(i) for i in idxs)
         user = (
             f"Durasi tiap klip harus {lo}-{hi} detik. Pilih maksimal {per_win} klip terbaik dari bagian ini.\n"
             f"Nomor baris valid: {idxs[0]} sampai {idxs[-1]}.\n\nTRANSKRIP:\n{lines}"
@@ -185,10 +221,27 @@ def detect(transcript, total_dur, clip_count, clip_duration, provider, model, ke
             if end - start < lo * 0.6:
                 continue
             sc = {k: max(0, min(100, int(c.get(k, 50) or 50))) for k in ("hook", "flow", "value")}
+            base_total = sc["hook"] * 0.4 + sc["flow"] * 0.3 + sc["value"] * 0.3
+            heat = _heat_max(heatmap, start, end) if heatmap else 0.0
+            total = min(100, round(base_total * 0.80 + heat * 100 * 0.20)) if heat >= 0.60 else round(base_total)
+
+            # Tentukan titik awal momen klimaks (5 dtk) untuk fitur Hook 5 detik di depan
+            peak_s = _heatmap_peak_s(heatmap, start, end) if heatmap else None
+            if peak_s is None:
+                try:
+                    pk_idx = int(c["peak"])
+                    if a <= pk_idx <= b:
+                        peak_s = round(max(start, min(max(start, end - 5.0), units[pk_idx]["s"])), 3)
+                except (KeyError, TypeError, ValueError):
+                    pass
+            if peak_s is None:
+                peak_s = round(max(start, min(max(start, end - 5.0), start + (end - start) * 0.62)), 3)
+
             cands.append({
                 "start_s": round(start, 3), "end_s": round(end, 3),
+                "peak_s": peak_s, "heat_score": round(heat * 100),
                 "score_hook": sc["hook"], "score_flow": sc["flow"], "score_value": sc["value"],
-                "score_total": round(sc["hook"] * 0.4 + sc["flow"] * 0.3 + sc["value"] * 0.3),
+                "score_total": total,
                 "hook_title": (c.get("title") or units[a]["text"])[:80].strip(),
                 "reason": (c.get("reason") or "")[:300],
             })

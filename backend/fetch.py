@@ -61,4 +61,12 @@ def download(url: str, work: Path, resolution: str, job, emit) -> dict:
         if not cands:
             raise RuntimeError("Download selesai tapi file video tidak ditemukan")
         path = cands[0]
-    return {"path": path, "title": info.get("title") or "video"}
+    heatmap = []
+    for h in (info.get("heatmap") or []):
+        try:
+            s_, e_, v_ = float(h["start_time"]), float(h["end_time"]), float(h["value"])
+            if e_ > s_:
+                heatmap.append({"s": round(s_, 2), "e": round(e_, 2), "v": round(max(0.0, min(1.0, v_)), 3)})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return {"path": path, "title": info.get("title") or "video", "heatmap": heatmap}

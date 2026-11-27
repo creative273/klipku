@@ -18,7 +18,7 @@ from config import DATA, DEFAULT_OUTPUT
 from detect import detect
 from fetch import download, safe_name
 from proc import Cancelled, Job, probe
-from render import render_clip
+from render import clip_segments, render_clip
 import styles
 from tracking import analyze
 from transcribe import transcribe_online
@@ -121,6 +121,7 @@ def create_session(params: dict) -> dict:
         "gaming_split": float(params.get("gaming_split") or 0.40),
         "caption_style_id": params.get("caption_style_id") or st.get("caption_style_id") or styles.DEFAULT_ID,
         "title_overlay": 1 if params.get("title_overlay") else 0,
+        "hook_clip_on": 1 if params.get("hook_clip_on") else 0,
     }
     db.update("sessions", sid, {"opts": json.dumps(opts)})
     _jobs[sid] = Job()
@@ -135,7 +136,8 @@ def retry(session_id):
     opts = json.loads(s.get("opts") or "{}")
     st = db.get_settings()
     opts = {"format": "face916", "resolution": st["resolution"], "subtitle_on": 1, "gaming_split": 0.40,
-            "caption_style_id": st.get("caption_style_id") or styles.DEFAULT_ID, "title_overlay": 0, **opts}
+            "caption_style_id": st.get("caption_style_id") or styles.DEFAULT_ID, "title_overlay": 0,
+            "hook_clip_on": 0, **opts}
     # pakai pengaturan terbaru: biasanya user baru memperbaiki key/mode/provider sebelum Coba lagi
     db.update("sessions", session_id, {"stage": "queued", "error": None, "transcribe_mode": st["transcribe_mode"],
                                        "provider": st["provider"], "model": st["model"]})
@@ -202,9 +204,10 @@ def _run_pipeline(sid, opts, job: Job):
 
     # 1. fetch
     _stage(sid, "fetch")
+    heatmap = []
     if s["source_type"] == "url":
         got = download(s["source_url"], work, opts["resolution"], job, ev)
-        src, title = got["path"], got["title"]
+        src, title, heatmap = got["path"], got["title"], got.get("heatmap") or []
     else:
         src, title = Path(s["source_path"]), s["title"]
         if not src.exists():
@@ -213,8 +216,10 @@ def _run_pipeline(sid, opts, job: Job):
     db.update("sessions", sid, {
         "source_path": str(src), "title": title, "duration_s": info["duration"],
         "width": info["width"], "height": info["height"], "fps": info["fps"],
+        "heatmap": json.dumps(heatmap),
     })
-    log_line(sid, f"Video: {title} | {info['width']}x{info['height']} | {info['duration']:.0f} detik")
+    log_line(sid, f"Video: {title} | {info['width']}x{info['height']} | {info['duration']:.0f} detik"
+                  + (f" | Heatmap YouTube: {len(heatmap)} segmen" if heatmap else ""))
 
     # 2. transcribe
     _stage(sid, "transcribe")
@@ -233,17 +238,18 @@ def _run_pipeline(sid, opts, job: Job):
     # 3. detect
     _stage(sid, "detect")
     found = detect(tr, info["duration"], s["clip_count"], s["clip_duration"],
-                   s["provider"], s["model"], keys.get(s["provider"]), job, ev)
+                   s["provider"], s["model"], keys.get(s["provider"]), job, ev, heatmap=heatmap)
     db.exec_("DELETE FROM clips WHERE session_id=?", (sid,))
     for rank, c in enumerate(found, 1):
         db.exec_(
             "INSERT INTO clips(id, session_id, rank, start_s, end_s, score_total, score_hook, score_flow, score_value, "
-            "reason, hook_title, format, subtitle_on, gaming_split, resolution, status, caption_style_id, "
-            "title_overlay, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "heat_score, reason, hook_title, format, subtitle_on, gaming_split, resolution, status, caption_style_id, "
+            "title_overlay, hook_clip_on, peak_s, created_at, updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (db.new_id(), sid, rank, c["start_s"], c["end_s"], c["score_total"], c["score_hook"], c["score_flow"],
-             c["score_value"], c["reason"], c["hook_title"], opts["format"], opts["subtitle_on"],
-             opts["gaming_split"], opts["resolution"], "pending", opts["caption_style_id"], opts["title_overlay"],
-             db.now(), db.now()),
+             c["score_value"], c.get("heat_score", 0), c["reason"], c["hook_title"], opts["format"],
+             opts["subtitle_on"], opts["gaming_split"], opts["resolution"], "pending", opts["caption_style_id"],
+             opts["title_overlay"], opts.get("hook_clip_on", 0), c.get("peak_s"), db.now(), db.now()),
         )
     log_line(sid, f"Momen ditemukan: {len(found)}")
     emit(sid, "clips")
@@ -299,7 +305,8 @@ def _run_render(sid, clip_ids, job: Job):
                 emit(sid, "clip", id=c["id"], status="rendering")
             thumb = render_clip(src, s["width"], s["height"], c, words, out, work, job,
                                 style=styles.get(c["caption_style_id"]), analysis=analysis,
-                                watermark=watermark_settings(), on_progress=enc_prog)
+                                watermark=watermark_settings(), on_progress=enc_prog,
+                                source_dur=s.get("duration_s"))
             if old and old != str(out) and Path(old).exists():
                 Path(old).unlink(missing_ok=True)
             db.update("clips", c["id"], {"status": "done", "output_path": str(out), "thumb_path": str(thumb)})
@@ -337,9 +344,27 @@ def _analysis(sid, s, c, src, job, on_progress=None):
     db.update("clips", c["id"], {"status": "tracking"})
     emit(sid, "clip", id=c["id"], status="tracking")
     t0 = time.time()
+    segs = clip_segments(c, s.get("duration_s"))
     try:
-        a = analyze(src, c["start_s"], c["end_s"] - c["start_s"], s["width"], s["height"], job, s["fps"] or 30.0,
-                    on_progress)
+        if len(segs) == 1:
+            ss, se = segs[0]
+            a = analyze(src, ss, se - ss, s["width"], s["height"], job, s["fps"] or 30.0, on_progress)
+        else:
+            # Hook 5 detik di depan + segmen cerita utama: analisis keduanya lalu gabungkan timeline shot
+            tot = sum(max(0.1, se - ss) for ss, se in segs)
+            shots, samples, fc = [], 0, None
+            offset = 0.0
+            for ss, se in segs:
+                d = max(0.1, se - ss)
+                sub_cb = (lambda frac, off=offset, d=d: on_progress((off + frac * d) / tot)) if on_progress else None
+                part = analyze(src, ss, d, s["width"], s["height"], job, s["fps"] or 30.0, sub_cb)
+                for sh in part["shots"]:
+                    shots.append({**sh, "s": round(sh["s"] + offset, 4), "e": round(sh["e"] + offset, 4)})
+                samples += part.get("samples", 0)
+                if part.get("facecam"):
+                    fc = part["facecam"]
+                offset += d
+            a = {"shots": shots, "facecam": fc, "samples": samples}
     except Cancelled:
         raise
     except Exception as e:  # noqa: BLE001  tracking gagal: render tetap jalan dengan crop tengah

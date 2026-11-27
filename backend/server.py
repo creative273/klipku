@@ -27,7 +27,7 @@ import styles  # noqa: E402
 from config import DENO, FFMPEG, GITHUB_REPO, PROVIDERS, TOKEN, YUNET  # noqa: E402
 from server_util import first_line, run  # noqa: E402
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 app = FastAPI(title="Klipku backend", version=VERSION)
 app.add_middleware(
     CORSMiddleware,
@@ -303,6 +303,7 @@ class SessionIn(BaseModel):
     language: str | None = None
     caption_style_id: str | None = None
     title_overlay: bool = False
+    hook_clip_on: bool = False
 
 
 FORMATS = {"face916", "blurbg916", "square", "landscape", "gaming916"}
@@ -446,6 +447,8 @@ class ClipPatch(BaseModel):
     caption_style_id: str | None = None
     caption_overrides: dict[str, str] | None = None
     title_overlay: bool | None = None
+    hook_clip_on: bool | None = None
+    peak_s: float | None = None
     hook_title: str | None = None
     face_tracking: bool | None = None
     format: str | None = None
@@ -471,6 +474,10 @@ def patch_clip(cid: str, body: ClipPatch):
         data["face_tracking"] = 1 if data["face_tracking"] else 0
     if "title_overlay" in data:
         data["title_overlay"] = 1 if data["title_overlay"] else 0
+    if "hook_clip_on" in data:
+        data["hook_clip_on"] = 1 if data["hook_clip_on"] else 0
+    if "peak_s" in data and data["peak_s"] is not None:
+        data["peak_s"] = max(0.0, round(float(data["peak_s"]), 3))
     if "gaming_crop" in data:
         data["gaming_crop"] = _clean_gaming_crop(data["gaming_crop"])
     if "caption_overrides" in data:
@@ -487,8 +494,8 @@ def patch_clip(cid: str, body: ClipPatch):
         if s_ < 0 or e_ - s_ < 3:
             raise HTTPException(400, "Durasi klip minimal 3 detik")
     db.update("clips", cid, data)
-    if "start_s" in data or "end_s" in data:
-        db.exec_("DELETE FROM crop_tracks WHERE clip_id=?", (cid,))  # rentang berubah: analisis ulang
+    if any(k in data for k in ("start_s", "end_s", "hook_clip_on", "peak_s")):
+        db.exec_("DELETE FROM crop_tracks WHERE clip_id=?", (cid,))  # rentang/susunan berubah: analisis ulang
     return db.one("SELECT * FROM clips WHERE id=?", (cid,))
 
 
@@ -529,7 +536,7 @@ def clip_words(cid: str):
     c = db.one("SELECT * FROM clips WHERE id=?", (cid,))
     if not c:
         raise HTTPException(404, "klip tidak ada")
-    s = db.one("SELECT width, height FROM sessions WHERE id=?", (c["session_id"],))
+    s = db.one("SELECT width, height, duration_s FROM sessions WHERE id=?", (c["session_id"],))
     tr = db.one("SELECT words FROM transcripts WHERE session_id=?", (c["session_id"],))
     ct = db.one("SELECT path FROM crop_tracks WHERE clip_id=?", (cid,))
     fc = json.loads(ct["path"]).get("facecam") if ct else None
@@ -544,7 +551,11 @@ def clip_words(cid: str):
                     "e": round(min(w["e"], c["end_s"]) - c["start_s"], 3)})
     return {
         "clip": c, "words": out, "style": styles.get(c["caption_style_id"]),
-        "source": {"width": s["width"] if s else 1920, "height": s["height"] if s else 1080},
+        "source": {
+            "width": s["width"] if s else 1920,
+            "height": s["height"] if s else 1080,
+            "duration_s": s["duration_s"] if s else c["end_s"],
+        },
         "facecam": fc,
     }
 

@@ -210,6 +210,7 @@ $('run').onclick = async () => {
         gaming_split: Number($('split').value) / 100,
         caption_style_id: createStyleId,
         title_overlay: $('title-ov').checked,
+        hook_clip_on: $('hook-clip').checked,
       },
     });
     $('url').value = '';
@@ -382,20 +383,27 @@ async function rerenderClip(c) {
 }
 
 function trackNote(c) {
+  const tags = [];
+  if (c.heat_score >= 55) tags.push(`🔥 Most Replayed ${c.heat_score}%`);
+  if (c.hook_clip_on) tags.push('⚡ Hook 5 dtk');
   if (c.format === 'gaming916') {
     try {
       const gc = JSON.parse(c.gaming_crop || '{}');
-      if (gc.mode === 'manual') return 'Crop manual (Facecam + Gameplay)';
+      if (gc.mode === 'manual') {
+        tags.push('Crop manual');
+        return tags.join(' · ');
+      }
     } catch { /* abaikan */ }
   }
   const t = c.tracking;
-  if (!t || !c.face_tracking) return '';
-  if (c.format === 'gaming916') return t.facecam ? 'Facecam ketemu' : 'Facecam tidak ketemu, bagian atas pakai area tengah';
-  if (!['face916', 'square'].includes(c.format)) return '';
-  const parts = [];
-  if (t.face_shots < t.shots) parts.push(`${t.shots - t.face_shots} shot tanpa wajah`);
-  if (c.format === 'face916' && t.dual_shots) parts.push(`${t.dual_shots} shot 2 orang`);
-  return parts.join(' · ');
+  if (t && c.face_tracking) {
+    if (c.format === 'gaming916') tags.push(t.facecam ? 'Facecam ketemu' : 'Facecam tengah');
+    else if (['face916', 'square'].includes(c.format)) {
+      if (t.face_shots < t.shots) tags.push(`${t.shots - t.face_shots} shot tanpa wajah`);
+      if (c.format === 'face916' && t.dual_shots) tags.push(`${t.dual_shots} shot 2 orang`);
+    }
+  }
+  return tags.join(' · ');
 }
 
 $('back').onclick = () => show('history');
@@ -850,6 +858,15 @@ async function openEditor(cid) {
   edGmode.set(ED.gamingCrop.mode);
   $('ed-face').checked = !!c.face_tracking;
   $('ed-split').value = Math.round((c.gaming_split || 0.4) * 100);
+  $('ed-hook-clip').checked = !!c.hook_clip_on;
+  const totalClip = Math.max(3, c.end_s - c.start_s);
+  const hookDur = Math.min(5, Math.max(2.5, totalClip * 0.25));
+  const peakMin = c.start_s;
+  const peakMax = Math.max(c.start_s, c.end_s - hookDur);
+  const defPeak = c.peak_s != null ? c.peak_s : (c.start_s + totalClip * 0.65);
+  $('ed-peak').min = peakMin.toFixed(1);
+  $('ed-peak').max = peakMax.toFixed(1);
+  $('ed-peak').value = Math.max(peakMin, Math.min(peakMax, defPeak)).toFixed(1);
   edFormatUi();
   $('ed-title').value = c.hook_title;
   $('ed-title-ov').checked = !!c.title_overlay;
@@ -882,6 +899,23 @@ function edStageShape() {
   const f = ED.format;
   $('ed-stage').className = 'stage' + (f === 'square' ? ' square' : f === 'landscape' ? ' landscape' : f === 'blurbg916' ? ' blur' : '');
 }
+function edHookUi() {
+  const c = ED.clip;
+  if (!c) return;
+  const on = $('ed-hook-clip').checked;
+  $('ed-peak-box').classList.toggle('hidden', !on);
+  if (!on) return;
+  const total = Math.max(3, c.end_s - c.start_s);
+  const hookDur = Math.min(5, Math.max(2.5, total * 0.25));
+  const mainDur = Math.max(3, total - hookDur);
+  const hs = Number($('ed-peak').value || c.start_s);
+  const he = hs + hookDur;
+  const ms = hs >= 3 ? Math.max(0, hs - mainDur) : c.start_s;
+  const me = hs >= 3 ? hs : ms + mainDur;
+  $('ed-peak-val').textContent = fmtDur(hs);
+  $('ed-peak-info').textContent =
+    `0:00–${fmtDur(hookDur)} momen viral (${fmtDur(hs)}–${fmtDur(he)}) → lanjut ${Math.round(me - ms)} dtk sebelumnya (${fmtDur(ms)}–${fmtDur(me)})`;
+}
 function edFormatUi() {
   const f = ED.format;
   const isGaming = f === 'gaming916';
@@ -895,10 +929,17 @@ function edFormatUi() {
     ? 'Preview langsung sesuai area Facecam (atas) dan Gameplay (bawah) yang kamu pilih.'
     : 'Preview memakai video sumber dengan crop tengah. Posisi wajah dan layout 2 orang terlihat di hasil render.';
   edStageShape();
+  edHookUi();
   if (manual) gcRenderBoxes();
   drawOverlay();
 }
 $('ed-split').addEventListener('input', edFormatUi);
+$('ed-hook-clip').addEventListener('change', edHookUi);
+$('ed-peak').addEventListener('input', () => {
+  edHookUi();
+  const v = $('ed-video');
+  if (v && ED.clip) v.currentTime = Number($('ed-peak').value);
+});
 
 function edRel() { return Math.max(0, $('ed-video').currentTime - ED.clip.start_s); }
 
@@ -1121,6 +1162,8 @@ async function edSave(render) {
         caption_style_id: ED.styleId, caption_overrides: ED.overrides,
         format: ED.format, face_tracking: $('ed-face').checked, gaming_split: Number($('ed-split').value) / 100,
         gaming_crop: ED.gamingCrop,
+        hook_clip_on: $('ed-hook-clip').checked,
+        peak_s: Number($('ed-peak').value),
       },
     });
     if (render) {

@@ -174,17 +174,75 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None, gamin
     raise ValueError(f"format tidak dikenal: {fmt}")
 
 
+def clip_segments(clip: dict, source_dur: float | None = None) -> list[tuple[float, float]]:
+    """Kembalikan daftar segmen sumber [(s, e), ...] untuk klip.
+
+    - Normal: [(start_s, end_s)]
+    - Hook 5 dtk di depan (hook_clip_on=1):
+      [(h_start, h_end), (m_start, m_end)]
+      = 5 detik momen viral/heatmap di awal, lalu sisa durasinya adalah momen tepat sebelum kejadian itu.
+    """
+    start, end = float(clip["start_s"]), float(clip["end_s"])
+    total = max(3.0, end - start)
+    if not clip.get("hook_clip_on") or total < 10.0:
+        return [(start, end)]
+    src_dur = float(source_dur) if source_dur and source_dur > end else end
+    hook_dur = min(5.0, max(2.5, total * 0.25))
+    main_dur = max(3.0, total - hook_dur)
+    peak = clip.get("peak_s")
+    if peak is None:
+        peak = start + total * 0.65
+    h_start = max(0.0, min(float(peak), max(0.0, src_dur - hook_dur)))
+    h_end = min(src_dur, h_start + hook_dur)
+    # bagian kedua = momen sebelum kejadian viral (mis. 25 dtk sebelum momen 5 dtk untuk klip 30 dtk)
+    if h_start >= 3.0:
+        m_end = h_start
+        m_start = max(0.0, m_end - main_dur)
+        if m_end - m_start < 3.0:
+            m_start, m_end = start, min(src_dur, start + main_dur)
+    else:
+        m_start = start
+        m_end = min(src_dur, start + main_dur)
+    return [(round(h_start, 3), round(h_end, 3)), (round(m_start, 3), round(m_end, 3))]
+
+
 def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work: Path, job, style=None,
-                analysis=None, watermark=None, on_progress=None):
+                analysis=None, watermark=None, on_progress=None, source_dur=None):
     """watermark: {"mode": "off|text|image", "text", "image" (path), "position", "opacity", "size"}"""
     import json
 
     fmt = clip["format"]
     W, H = out_size(fmt, clip["resolution"])
     gc = json.loads(clip.get("gaming_crop") or "{}")
+    segs = clip_segments(clip, source_dur)
+    is_hook = len(segs) == 2
     graph, cap_pos = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40), analysis, gaming_crop=gc)
     start, end = clip["start_s"], clip["end_s"]
-    dur = end - start
+    dur = sum(max(0.0, e - s) for s, e in segs)
+
+    if is_hook:
+        (hs, he), (ms, me) = segs
+        hd = max(0.2, he - hs)
+        md = max(0.2, me - ms)
+        fade_out_st = max(0.0, hd - 0.02)
+        prefix = (
+            f"[0:v]setpts=PTS-STARTPTS[hv];"
+            f"[0:a:0]asetpts=PTS-STARTPTS,afade=t=out:st={fade_out_st:.3f}:d=0.02[ha];"
+            f"[1:v]setpts=PTS-STARTPTS[mv];"
+            f"[1:a:0]asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.02[ma];"
+            f"[hv][ha][mv][ma]concat=n=2:v=1:a=1[rawv][aout];"
+        )
+        graph = prefix + graph.replace("[0:v]", "[rawv]", 1)
+        input_args = [
+            "-ss", f"{hs:.3f}", "-t", f"{hd:.3f}", "-i", src,
+            "-ss", f"{ms:.3f}", "-t", f"{md:.3f}", "-i", src,
+        ]
+        audio_map = "[aout]"
+        wm_idx = 2
+    else:
+        input_args = ["-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src]
+        audio_map = "0:a:0"
+        wm_idx = 1
 
     wm = watermark or {}
     extra_inputs = []
@@ -196,7 +254,7 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
         pos = wm.get("position", "tr")
         ox = f"{m}" if pos in ("tl", "bl") else f"W-w-{m}"
         oy = f"{m}" if pos in ("tl", "tr") else f"H-h-{m}"
-        graph += (f";[1:v]scale={ww}:-2:flags=lanczos,format=rgba,colorchannelmixer=aa={op:.2f}[wm];"
+        graph += (f";[{wm_idx}:v]scale={ww}:-2:flags=lanczos,format=rgba,colorchannelmixer=aa={op:.2f}[wm];"
                   f"[base][wm]overlay={ox}:{oy}:format=auto[basew]")
         base_label = "basew"
         extra_inputs = ["-loop", "1", "-i", str(wm["image"])]
@@ -207,8 +265,6 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
     subs = bool(clip.get("subtitle_on", 1))
     title = clip.get("hook_title") if clip.get("title_overlay") else None
     if subs or title or wm_text:
-        import json
-
         # judul: Gaming di atas panel facecam, format lain 10% dari atas
         title_y = 0.06 if fmt == "gaming916" else 0.10
         ass = work / f"clip_{clip['id']}.ass"
@@ -217,7 +273,8 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
                       overrides=json.loads(clip.get("caption_overrides") or "{}"), positions=cap_pos,
                       subtitles=subs, title=title, title_y=title_y,
                       watermark_text=wm_text, watermark_pos=wm.get("position", "tr"),
-                      watermark_opacity=float(wm.get("opacity", 0.85))),
+                      watermark_opacity=float(wm.get("opacity", 0.85)),
+                      segments=segs),
             encoding="utf-8",
         )
         # ffmpeg dijalankan dengan cwd=work, jadi ASS & fontsdir dirujuk relatif:
@@ -229,7 +286,7 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
 
     tmp = out_path.with_name(out_path.stem + ".part.mp4")
     try:
-        _encode(job, src, start, dur, graph, tmp, work, extra_inputs, on_progress)
+        _encode(job, input_args, dur, graph, audio_map, tmp, work, extra_inputs, on_progress)
     except BaseException:
         tmp.unlink(missing_ok=True)  # batal / gagal: jangan tinggalkan file setengah jadi
         raise
@@ -241,10 +298,10 @@ def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work
     return thumb
 
 
-def _encode(job, src, start, dur, graph, tmp, work, extra_inputs=(), on_progress=None):
+def _encode(job, input_args, dur, graph, audio_map, tmp, work, extra_inputs=(), on_progress=None):
     job.run([
-        FFMPEG, "-hide_banner", "-nostats", "-progress", "pipe:1", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", src, *extra_inputs,
-        "-filter_complex", graph, "-map", "[v]", "-map", "0:a:0", "-shortest",
+        FFMPEG, "-hide_banner", "-nostats", "-progress", "pipe:1", "-y", *input_args, *extra_inputs,
+        "-filter_complex", graph, "-map", "[v]", "-map", audio_map, "-shortest",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp,
     ], cwd=work, on_progress=on_progress, total_s=dur)

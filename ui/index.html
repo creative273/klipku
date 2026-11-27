@@ -104,6 +104,7 @@
       <div class="row gap-l">
         <label class="switch"><input id="subs" type="checkbox" checked><span class="sw"></span>Subtitle di video</label>
         <label class="switch"><input id="title-ov" type="checkbox"><span class="sw"></span>Judul hook di 3 detik awal</label>
+        <label class="switch" title="Taruh 5 detik momen viral/Most Replayed di awal klip, lalu lanjut ke cerita sebelum momen itu terjadi"><input id="hook-clip" type="checkbox"><span class="sw"></span>Hook 5 detik di depan</label>
       </div>
     </div>
 
@@ -219,6 +220,15 @@
           <div class="row gap-l mt">
             <label class="switch"><input type="checkbox" id="ed-face"><span class="sw"></span>Ikuti wajah</label>
             <label class="switch"><input type="checkbox" id="ed-subs"><span class="sw"></span>Subtitle</label>
+            <label class="switch" title="5 detik momen viral/Most Replayed di awal, lalu lanjut ke momen sebelum kejadian itu"><input type="checkbox" id="ed-hook-clip"><span class="sw"></span>Hook 5 dtk di depan</label>
+          </div>
+          <div class="inline-opt col hidden" id="ed-peak-box">
+            <div class="row between" style="width:100%">
+              <label for="ed-peak">Mulai momen hook 5 dtk</label>
+              <b class="tnum" id="ed-peak-val">0:00</b>
+            </div>
+            <input id="ed-peak" type="range" min="0" max="60" step="0.5" style="max-width:100%">
+            <span class="hint" id="ed-peak-info"></span>
           </div>
           <div class="inline-opt hidden" id="ed-split-box">
             <label for="ed-split">Tinggi facecam</label>

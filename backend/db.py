@@ -50,11 +50,19 @@ def _migrate(c):
     scols = {r[1] for r in c.execute("PRAGMA table_info(sessions)")}
     if "opts" not in scols:
         c.execute("ALTER TABLE sessions ADD COLUMN opts TEXT NOT NULL DEFAULT '{}'")
+    if "heatmap" not in scols:
+        c.execute("ALTER TABLE sessions ADD COLUMN heatmap TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(heatmap))")
     cols = {r[1] for r in c.execute("PRAGMA table_info(clips)")}
     if "title_overlay" not in cols:
         c.execute("ALTER TABLE clips ADD COLUMN title_overlay INTEGER NOT NULL DEFAULT 0 CHECK (title_overlay IN (0,1))")
     if "gaming_crop" not in cols:
         c.execute("ALTER TABLE clips ADD COLUMN gaming_crop TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(gaming_crop))")
+    if "hook_clip_on" not in cols:
+        c.execute("ALTER TABLE clips ADD COLUMN hook_clip_on INTEGER NOT NULL DEFAULT 0 CHECK (hook_clip_on IN (0,1))")
+    if "peak_s" not in cols:
+        c.execute("ALTER TABLE clips ADD COLUMN peak_s REAL")
+    if "heat_score" not in cols:
+        c.execute("ALTER TABLE clips ADD COLUMN heat_score INTEGER NOT NULL DEFAULT 0 CHECK (heat_score BETWEEN 0 AND 100)")
     c.commit()
 
 

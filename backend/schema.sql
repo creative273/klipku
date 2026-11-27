@@ -30,6 +30,7 @@ CREATE TABLE sessions (
   error         TEXT,
   output_dir    TEXT NOT NULL,
   opts          TEXT NOT NULL DEFAULT '{}', -- pilihan saat Buat klip (format, resolusi, caption), untuk Coba lagi
+  heatmap       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(heatmap)), -- Most Replayed YouTube [{"s":..,"e":..,"v":..}]
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   CHECK ((source_type = 'url' AND source_url IS NOT NULL) OR (source_type = 'file' AND source_path IS NOT NULL))
@@ -78,6 +79,7 @@ CREATE TABLE clips (
   score_hook    INTEGER NOT NULL CHECK (score_hook BETWEEN 0 AND 100),
   score_flow    INTEGER NOT NULL CHECK (score_flow BETWEEN 0 AND 100),
   score_value   INTEGER NOT NULL CHECK (score_value BETWEEN 0 AND 100),
+  heat_score    INTEGER NOT NULL DEFAULT 0 CHECK (heat_score BETWEEN 0 AND 100),
   reason        TEXT,                 -- alasan AI memilih momen ini
   hook_title    TEXT NOT NULL,
   format        TEXT NOT NULL DEFAULT 'face916'
@@ -85,6 +87,8 @@ CREATE TABLE clips (
   face_tracking INTEGER NOT NULL DEFAULT 1 CHECK (face_tracking IN (0,1)),
   subtitle_on   INTEGER NOT NULL DEFAULT 1 CHECK (subtitle_on IN (0,1)),
   title_overlay INTEGER NOT NULL DEFAULT 0 CHECK (title_overlay IN (0,1)), -- judul hook tampil 3 dtk pertama
+  hook_clip_on  INTEGER NOT NULL DEFAULT 0 CHECK (hook_clip_on IN (0,1)),  -- 5 dtk momen viral di depan, lalu cerita sebelumnya
+  peak_s        REAL,                 -- detik awal momen klimaks/heatmap (di video sumber)
   caption_style_id TEXT REFERENCES caption_styles(id) ON DELETE SET NULL,
   caption_overrides TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(caption_overrides)), -- {"word_idx": "teks baru"}
   gaming_split  REAL NOT NULL DEFAULT 0.40 CHECK (gaming_split BETWEEN 0.25 AND 0.60), -- tinggi bagian muka
