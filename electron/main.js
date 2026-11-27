@@ -81,7 +81,7 @@ function createWindow() {
     width: 1100,
     height: 760,
     title: 'Klipku',
-    backgroundColor: '#111111',
+    backgroundColor: '#070b12',
     icon: path.join(__dirname, '..', 'ui', 'assets', 'icon-64.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

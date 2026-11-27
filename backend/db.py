@@ -97,6 +97,7 @@ DEFAULT_SETTINGS = {
     "caption_style_id": "builtin-tegas-kuning",
     "whisper_model": "small",
     "watermark": {"mode": "off", "text": "", "position": "tr", "opacity": 0.85, "size": 0.18},
+    "welcome_seen": False,
 }
 
 

@@ -1,9 +1,55 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Klipku">
-  <!-- bingkai video panjang (16:9) -->
-  <rect x="58" y="146" width="396" height="222" rx="30" fill="none" stroke="#6B6B6B" stroke-width="24"/>
-  <!-- klip vertikal (9:16) yang diambil darinya -->
-  <rect x="160" y="78" width="192" height="342" rx="32" fill="#F5B301"/>
-  <!-- baris caption -->
-  <rect x="190" y="322" width="132" height="24" rx="12" fill="#141414"/>
-  <rect x="214" y="358" width="84" height="24" rx="12" fill="#141414"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14223A"/>
+      <stop offset="55%" stop-color="#0B1220"/>
+      <stop offset="100%" stop-color="#070B13"/>
+    </linearGradient>
+    <radialGradient id="glowTeal" cx="0.18" cy="0.18" r="0.68">
+      <stop offset="0%" stop-color="#0EA5E9" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="0.82" cy="0.85" r="0.72">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="wideFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="wideStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#BAE6FD" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#FDE68A" stop-opacity="0.32"/>
+    </linearGradient>
+    <linearGradient id="clipGrad" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#FFE066"/>
+      <stop offset="48%" stop-color="#F5B301"/>
+      <stop offset="100%" stop-color="#E67E00"/>
+    </linearGradient>
+    <linearGradient id="clipSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.50"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="sq">
+      <rect x="8" y="8" width="496" height="496" rx="116"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect x="8" y="8" width="496" height="496" fill="url(#bg)"/>
+    <rect x="8" y="8" width="496" height="496" fill="url(#glowTeal)"/>
+    <rect x="8" y="8" width="496" height="496" fill="url(#glowAmber)"/>
+  </g>
+  <rect x="11" y="11" width="490" height="490" rx="113" fill="none" stroke="url(#rim)" stroke-width="6"/>
+  <rect x="58" y="150" width="396" height="212" rx="34" fill="url(#wideFill)" stroke="url(#wideStroke)" stroke-width="12"/>
+  <rect x="156" y="76" width="200" height="360" rx="38" fill="url(#clipGrad)"/>
+  <rect x="156" y="76" width="200" height="176" rx="38" fill="url(#clipSheen)"/>
+  <path d="M224 172 C224 164 232.5 159.2 239.2 163.1 L295 195.8 C301.6 199.7 301.6 209.3 295 213.2 L239.2 245.9 C232.5 249.8 224 245 224 237 Z" fill="#130D02"/>
+  <rect x="190" y="330" width="132" height="24" rx="12" fill="#130D02" fill-opacity="0.90"/>
+  <rect x="218" y="368" width="76" height="20" rx="10" fill="#130D02" fill-opacity="0.62"/>
+  <path d="M392 80 L399 101 L420 108 L399 115 L392 136 L385 115 L364 108 L385 101 Z" fill="#E0F2FE"/>
 </svg>

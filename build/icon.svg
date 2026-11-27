@@ -1,9 +1,100 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#161616"/>
-  <g transform="translate(36 36) scale(0.86)">
-    <rect x="58" y="146" width="396" height="222" rx="30" fill="none" stroke="#6B6B6B" stroke-width="24"/>
-    <rect x="160" y="78" width="192" height="342" rx="32" fill="#F5B301"/>
-    <rect x="190" y="322" width="132" height="24" rx="12" fill="#161616"/>
-    <rect x="214" y="358" width="84" height="24" rx="12" fill="#161616"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Deep midnight ocean squircle background -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111C30"/>
+      <stop offset="55%" stop-color="#0A101D"/>
+      <stop offset="100%" stop-color="#070B13"/>
+    </linearGradient>
+
+    <!-- Ambient glow pools inside icon -->
+    <radialGradient id="glowTeal" cx="0.18" cy="0.18" r="0.65">
+      <stop offset="0%" stop-color="#0EA5E9" stop-opacity="0.34"/>
+      <stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="0.82" cy="0.85" r="0.7">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Outer glass rim highlight -->
+    <linearGradient id="rim" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.34"/>
+      <stop offset="45%" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.03"/>
+    </linearGradient>
+
+    <!-- Back 16:9 widescreen frosted glass fill & stroke -->
+    <linearGradient id="wideFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="wideStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#BAE6FD" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#FDE68A" stop-opacity="0.30"/>
+    </linearGradient>
+
+    <!-- Vertical 9:16 active clip card (luminous warm amber-gold) -->
+    <linearGradient id="clipGrad" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#FFE066"/>
+      <stop offset="48%" stop-color="#F5B301"/>
+      <stop offset="100%" stop-color="#E67E00"/>
+    </linearGradient>
+    <linearGradient id="clipSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.52"/>
+      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Soft drop shadow under vertical clip card -->
+    <filter id="cardShadow" x="-20%" y="-15%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#02050B" flood-opacity="0.58"/>
+    </filter>
+    <!-- Soft shadow for play symbol -->
+    <filter id="playShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#7C2D12" flood-opacity="0.35"/>
+    </filter>
+
+    <clipPath id="squircle">
+      <rect x="16" y="16" width="480" height="480" rx="112"/>
+    </clipPath>
+  </defs>
+
+  <!-- Base squircle -->
+  <g clip-path="url(#squircle)">
+    <rect x="16" y="16" width="480" height="480" fill="url(#bg)"/>
+    <rect x="16" y="16" width="480" height="480" fill="url(#glowTeal)"/>
+    <rect x="16" y="16" width="480" height="480" fill="url(#glowAmber)"/>
   </g>
+  <!-- Crisp glass rim -->
+  <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="url(#rim)" stroke-width="4"/>
+
+  <!-- 16:9 widescreen frosted glass frame (source video) -->
+  <rect x="64" y="152" width="384" height="208" rx="34" fill="url(#wideFill)" stroke="url(#wideStroke)" stroke-width="10"/>
+  <!-- Film side notches (subtle) -->
+  <rect x="86" y="188" width="22" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.22"/>
+  <rect x="86" y="249" width="22" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.22"/>
+  <rect x="86" y="310" width="22" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.22"/>
+  <rect x="404" y="188" width="22" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.22"/>
+  <rect x="404" y="249" width="22" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.22"/>
+  <rect x="404" y="310" width="22" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.22"/>
+
+  <!-- 9:16 vertical short clip card emerging from center -->
+  <g filter="url(#cardShadow)">
+    <rect x="158" y="80" width="196" height="352" rx="36" fill="url(#clipGrad)"/>
+    <!-- Top specular glass highlight inside amber card -->
+    <rect x="158" y="80" width="196" height="176" rx="36" fill="url(#clipSheen)"/>
+    <rect x="160" y="82" width="192" height="348" rx="34" fill="none" stroke="#FFFBEB" stroke-opacity="0.48" stroke-width="4"/>
+  </g>
+
+  <!-- Play triangle inside vertical clip -->
+  <path filter="url(#playShadow)" d="M225 174 C225 166.5 233.2 161.8 239.7 165.6 L293 196.8 C299.4 200.6 299.4 209.8 293 213.6 L239.7 244.8 C233.2 248.6 225 243.9 225 236.4 Z" fill="#130D02"/>
+
+  <!-- Dynamic caption bars at bottom of vertical clip -->
+  <rect x="192" y="328" width="128" height="22" rx="11" fill="#130D02" fill-opacity="0.90"/>
+  <rect x="218" y="364" width="76" height="20" rx="10" fill="#130D02" fill-opacity="0.62"/>
+
+  <!-- Crisp 4-point AI sparkle accent top-right -->
+  <path d="M388 84 L394.5 103.5 L414 110 L394.5 116.5 L388 136 L381.5 116.5 L362 110 L381.5 103.5 Z" fill="#E0F2FE"/>
 </svg>

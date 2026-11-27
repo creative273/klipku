@@ -44,3 +44,4 @@ PROVIDERS = {
     },
 }
 GROQ_STT_MODEL = "whisper-large-v3-turbo"
+GITHUB_REPO = "creative273/klipku"

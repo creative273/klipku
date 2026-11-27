@@ -7,9 +7,16 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="ambient-bg" aria-hidden="true">
+  <span class="orb orb-1"></span>
+  <span class="orb orb-2"></span>
+  <span class="orb orb-3"></span>
+  <span class="grain"></span>
+</div>
+
 <nav class="side" aria-label="Menu utama">
   <div class="brand">
-    <img src="assets/logo-mark.svg" alt="" width="30" height="30">
+    <img src="assets/logo-mark.svg" alt="" width="34" height="34">
     <span>Klipku</span>
   </div>
   <button class="nav on" data-view="create">
@@ -26,7 +33,13 @@
     <span class="aj-title" id="aj-title"></span>
     <span class="meter"><span id="aj-bar"></span></span>
   </button>
-  <div class="ver" id="ver"></div>
+  <div class="side-foot">
+    <button class="support-btn" id="open-support" type="button" title="Dukung kreator via YouTube atau Saweria">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7-4.4-9-8.6C1.4 8.5 3.6 5 7.2 5c2 0 3.6 1 4.8 2.6C13.2 6 14.8 5 16.8 5c3.6 0 5.8 3.5 4.2 6.9-2 4.2-9 8.6-9 8.6Z"/></svg>
+      <span>Dukung Kreator</span>
+    </button>
+    <div class="ver" id="ver"></div>
+  </div>
 </nav>
 
 <main>
@@ -342,6 +355,16 @@
     <div class="panel">
       <h2>Mesin aplikasi</h2>
       <div class="row between">
+        <div class="min0">
+          <b>Versi Klipku</b> <span id="app-ver-status" class="hint">Memuat versi…</span>
+          <p class="hint">Cek apakah ada rilis Klipku yang lebih baru di GitHub.</p>
+        </div>
+        <div class="row">
+          <button class="primary sm hidden" id="app-download-update" type="button">Unduh versi baru ↗</button>
+          <button class="ghost sm" id="app-check-update" type="button">Cek versi terbaru</button>
+        </div>
+      </div>
+      <div class="row between sep">
         <div><b>yt-dlp</b> <span id="yt-ver" class="hint">Mengecek versi…</span><p class="hint">Kalau download YouTube mulai gagal, update dulu lalu buka ulang app.</p></div>
         <button class="ghost sm" id="yt-update">Update yt-dlp</button>
       </div>
@@ -353,6 +376,49 @@
     </div>
   </section>
 </main>
+
+<!-- Layar awal & dukungan kreator (YouTube + Saweria) -->
+<div id="welcome-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="wl-title">
+  <div class="modal-card">
+    <div class="wl-head">
+      <img src="assets/logo-mark.svg" alt="Klipku" width="56" height="56" class="wl-logo">
+      <h2 id="wl-title">Selamat datang di Klipku</h2>
+      <p class="wl-desc" id="wl-desc">
+        Aplikasi ini <b>100% gratis</b> untuk publik. Sebelum mulai bikin klip, yuk dukung pengembangannya dengan subscribe YouTube atau traktir seikhlasnya lewat Saweria.
+      </p>
+    </div>
+
+    <div class="sup-grid">
+      <button type="button" class="sup-card sup-yt" id="wl-yt">
+        <span class="sup-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M21.6 7.2a2.8 2.8 0 0 0-2-2C17.8 4.7 12 4.7 12 4.7s-5.8 0-7.6.5a2.8 2.8 0 0 0-2 2C2 9 2 12 2 12s0 3 .4 4.8a2.8 2.8 0 0 0 2 2c1.8.5 7.6.5 7.6.5s5.8 0 7.6-.5a2.8 2.8 0 0 0 2-2c.4-1.8.4-4.8.4-4.8s0-3-.4-4.8ZM10 15.2V8.8l5.4 3.2-5.4 3.2Z"/></svg>
+        </span>
+        <span class="sup-body">
+          <b>Subscribe YouTube</b>
+          <small id="wl-yt-handle">@channelkamu</small>
+        </span>
+        <span class="sup-pill" id="wl-yt-pill">Buka ↗</span>
+      </button>
+
+      <button type="button" class="sup-card sup-saweria" id="wl-saweria">
+        <span class="sup-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 21s-7.2-4.6-9.2-8.9C1.2 8.6 3.5 5 7.2 5c2 0 3.6 1.1 4.8 2.7C13.2 6.1 14.8 5 16.8 5c3.7 0 6 3.6 4.4 7.1C19.2 16.4 12 21 12 21Z"/></svg>
+        </span>
+        <span class="sup-body">
+          <b>Gift via Saweria</b>
+          <small>Seikhlasnya, bantu update fitur</small>
+        </span>
+        <span class="sup-pill" id="wl-saweria-pill">Buka ↗</span>
+      </button>
+    </div>
+
+    <div class="wl-foot">
+      <button type="button" class="primary wl-enter" id="wl-enter" disabled>Klik YouTube atau Saweria dulu</button>
+      <button type="button" class="wl-skip" id="wl-skip" disabled>Sudah subscribe? Lanjut dalam 5d…</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>

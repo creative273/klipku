@@ -1,7 +1,17 @@
 // Klipku UI (tanpa framework).
 const $ = (id) => document.getElementById(id);
 const K = window.klipku;
+
+// Konfigurasi Kreator untuk layar awal & tombol "Dukung Kreator".
+// Ganti dengan link channel YouTube dan Saweria milikmu sebelum build rilis publik.
+const CREATOR = {
+  youtubeHandle: '@channelkamu',
+  youtubeUrl: 'https://www.youtube.com/@channelkamu?sub_confirmation=1',
+  saweriaUrl: 'https://saweria.co/usernamekamu',
+};
+
 let B = null; // { url, token }
+let APP_VERSION = '';
 let filePath = null;
 let current = null; // id sesi yang sedang dibuka
 let es = null; // EventSource progres
@@ -466,6 +476,9 @@ async function loadSettings() {
   settingsCache = st;
   fillTranscribe(st.settings);
   fillWatermark(st.settings);
+  if (APP_VERSION && !$('app-ver-status').dataset.checked) {
+    $('app-ver-status').textContent = `Versi ${APP_VERSION}`;
+  }
   loadYtdlp();
   const prov = $('provider');
   prov.innerHTML = '';
@@ -991,19 +1004,155 @@ $('yt-update').onclick = async () => {
   loadYtdlp();
 };
 
+// ---------- Pengaturan: cek versi terbaru Klipku ----------
+
+let latestReleaseUrl = '';
+$('app-check-update').onclick = async () => {
+  const b = $('app-check-update');
+  const st = $('app-ver-status');
+  const dl = $('app-download-update');
+  b.disabled = true;
+  b.textContent = 'Mengecek…';
+  st.textContent = 'Menghubungi GitHub…';
+  st.className = 'hint';
+  dl.classList.add('hidden');
+  try {
+    const r = await api('/engine/app-update');
+    st.dataset.checked = '1';
+    latestReleaseUrl = r.url || '';
+    if (r.has_update && r.latest) {
+      st.textContent = `Tersedia v${r.latest} (terpasang v${r.current})`;
+      st.className = 'ok';
+      dl.classList.remove('hidden');
+      toast(`Versi baru Klipku v${r.latest} tersedia!`);
+    } else if (!r.latest) {
+      st.textContent = `Versi ${r.current} · ${r.message || 'Belum ada rilis di GitHub'}`;
+      toast(`Klipku v${r.current}. ${r.message || ''}`);
+    } else {
+      st.textContent = `Versi ${r.current} (sudah terbaru)`;
+      st.className = 'ok';
+      toast(`Klipku sudah versi terbaru (v${r.current}).`);
+    }
+  } catch (e) {
+    st.textContent = `Versi ${APP_VERSION || '?'} · gagal cek update`;
+    st.className = 'bad hint';
+    toast(e.message, true);
+  }
+  b.disabled = false;
+  b.textContent = 'Cek versi terbaru';
+};
+$('app-download-update').onclick = () => {
+  if (latestReleaseUrl && K) K.openExternal(latestReleaseUrl);
+};
+
+// ---------- Layar awal & Dukung Kreator (YouTube + Saweria) ----------
+
+const WL = { gate: false, unlocked: false, timer: null };
+
+function openSupportModal(gateMode = false) {
+  WL.gate = gateMode;
+  WL.unlocked = !gateMode;
+  clearInterval(WL.timer);
+  $('wl-yt-handle').textContent = CREATOR.youtubeHandle;
+  $('wl-title').textContent = gateMode ? 'Selamat datang di Klipku' : 'Dukung Kreator Klipku';
+  $('wl-desc').innerHTML = gateMode
+    ? 'Aplikasi ini <b>100% gratis</b> untuk publik. Sebelum mulai bikin klip, yuk dukung pengembangannya dengan subscribe YouTube atau traktir seikhlasnya lewat Saweria.'
+    : 'Terima kasih sudah memakai <b>Klipku</b>! Dukunganmu lewat subscribe YouTube atau gift Saweria seikhlasnya bikin app ini terus mendapat update fitur baru.';
+
+  const enter = $('wl-enter');
+  const skip = $('wl-skip');
+  if (gateMode) {
+    enter.disabled = true;
+    enter.textContent = 'Klik YouTube atau Saweria dulu';
+    skip.classList.remove('hidden');
+    skip.disabled = true;
+    let sec = 5;
+    skip.textContent = `Sudah subscribe? Lanjut dalam ${sec}d…`;
+    WL.timer = setInterval(() => {
+      sec -= 1;
+      if (sec <= 0) {
+        clearInterval(WL.timer);
+        skip.disabled = false;
+        skip.textContent = 'Saya sudah subscribe, lanjut ke aplikasi';
+      } else {
+        skip.textContent = `Sudah subscribe? Lanjut dalam ${sec}d…`;
+      }
+    }, 1000);
+  } else {
+    enter.disabled = false;
+    enter.textContent = 'Tutup';
+    skip.classList.add('hidden');
+  }
+  $('welcome-modal').classList.remove('hidden');
+}
+
+function markSupported(cardId, pillId) {
+  $(cardId).classList.add('done');
+  $(pillId).textContent = '✓ Terima kasih!';
+  if (WL.gate && !WL.unlocked) {
+    WL.unlocked = true;
+    clearInterval(WL.timer);
+    const enter = $('wl-enter');
+    enter.disabled = false;
+    enter.textContent = 'Terima kasih! Mulai Pakai Klipku →';
+    $('wl-skip').classList.add('hidden');
+  }
+}
+
+async function finishWelcome() {
+  clearInterval(WL.timer);
+  $('welcome-modal').classList.add('hidden');
+  if (WL.gate) {
+    try { localStorage.setItem('klipku_welcome_seen', '1'); } catch { /* abaikan */ }
+    try { await api('/settings', { method: 'PUT', body: { welcome_seen: true } }); } catch { /* abaikan */ }
+  }
+}
+
+$('wl-yt').onclick = () => {
+  if (K) K.openExternal(CREATOR.youtubeUrl);
+  markSupported('wl-yt', 'wl-yt-pill');
+};
+$('wl-saweria').onclick = () => {
+  if (K) K.openExternal(CREATOR.saweriaUrl);
+  markSupported('wl-saweria', 'wl-saweria-pill');
+};
+$('wl-enter').onclick = finishWelcome;
+$('wl-skip').onclick = finishWelcome;
+$('open-support').onclick = () => openSupportModal(false);
+$('welcome-modal').addEventListener('click', (ev) => {
+  if (ev.target === $('welcome-modal') && !WL.gate) finishWelcome();
+});
+window.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && !$('welcome-modal').classList.contains('hidden') && !WL.gate) finishWelcome();
+});
+
+async function checkWelcome() {
+  let seen = false;
+  try { seen = localStorage.getItem('klipku_welcome_seen') === '1'; } catch { /* abaikan */ }
+  try {
+    const st = settingsCache || await api('/settings');
+    settingsCache = st;
+    if (st.settings && st.settings.welcome_seen) seen = true;
+  } catch { /* abaikan */ }
+  if (!seen) openSupportModal(true);
+}
+
 // ---------- start ----------
 
 async function init() {
+  if (!K) return;
   B = await K.backendInfo();
   if (!B) { toast('Mesin app gagal start. Tutup lalu buka lagi Klipku.', true); return; }
   for (let i = 0; i < 60; i++) {
     try {
       const h = await api('/health');
+      APP_VERSION = h.app;
       $('ver').textContent = `v${h.app}`;
-      refreshRunNote();
+      await refreshRunNote();
       loadStyles();
       updateMoreSummary();
       pollActive();
+      checkWelcome();
       return;
     } catch { await new Promise((r) => setTimeout(r, 500)); }
   }
