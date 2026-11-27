@@ -421,6 +421,34 @@ def delete_session(sid: str):
     return {"ok": True}
 
 
+def _clean_rect(v):
+    if not isinstance(v, (list, tuple)) or len(v) != 4:
+        return None
+    try:
+        x, y, w, h = (float(n) for n in v)
+    except (TypeError, ValueError):
+        return None
+    w = max(0.05, min(1.0, w))
+    h = max(0.05, min(1.0, h))
+    x = max(0.0, min(1.0 - w, x))
+    y = max(0.0, min(1.0 - h, y))
+    return [round(x, 4), round(y, 4), round(w, 4), round(h, 4)]
+
+
+def _clean_gaming_crop(raw) -> str:
+    if not isinstance(raw, dict):
+        return "{}"
+    mode = raw.get("mode")
+    if mode not in ("auto", "manual"):
+        mode = "auto"
+    out = {"mode": mode}
+    for k in ("facecam", "gameplay"):
+        rect = _clean_rect(raw.get(k))
+        if rect:
+            out[k] = rect
+    return json.dumps(out)
+
+
 class ClipPatch(BaseModel):
     caption_style_id: str | None = None
     caption_overrides: dict[str, str] | None = None
@@ -431,6 +459,7 @@ class ClipPatch(BaseModel):
     subtitle_on: bool | None = None
     resolution: str | None = None
     gaming_split: float | None = None
+    gaming_crop: dict | None = None
     start_s: float | None = None
     end_s: float | None = None
 
@@ -449,6 +478,8 @@ def patch_clip(cid: str, body: ClipPatch):
         data["face_tracking"] = 1 if data["face_tracking"] else 0
     if "title_overlay" in data:
         data["title_overlay"] = 1 if data["title_overlay"] else 0
+    if "gaming_crop" in data:
+        data["gaming_crop"] = _clean_gaming_crop(data["gaming_crop"])
     if "caption_overrides" in data:
         clean = {str(int(k)): str(v)[:60] for k, v in (data["caption_overrides"] or {}).items() if str(k).isdigit()}
         data["caption_overrides"] = json.dumps(clean, ensure_ascii=False)
@@ -468,6 +499,28 @@ def patch_clip(cid: str, body: ClipPatch):
     return db.one("SELECT * FROM clips WHERE id=?", (cid,))
 
 
+class SessionGamingCropIn(BaseModel):
+    gaming_crop: dict
+    gaming_split: float | None = None
+    set_format: bool = True
+
+
+@app.put("/sessions/{sid}/gaming-crop")
+def apply_session_gaming_crop(sid: str, body: SessionGamingCropIn):
+    if not db.one("SELECT id FROM sessions WHERE id=?", (sid,)):
+        raise HTTPException(404, "sesi tidak ada")
+    gc_json = _clean_gaming_crop(body.gaming_crop)
+    fields = {"gaming_crop": gc_json}
+    if body.gaming_split is not None:
+        fields["gaming_split"] = max(0.25, min(0.60, float(body.gaming_split)))
+    if body.set_format:
+        fields["format"] = "gaming916"
+    clips = db.all_("SELECT id FROM clips WHERE session_id=?", (sid,))
+    for c in clips:
+        db.update("clips", c["id"], fields)
+    return {"ok": True, "updated": len(clips)}
+
+
 @app.post("/clips/{cid}/render")
 def render_clip(cid: str):
     c = db.one("SELECT session_id FROM clips WHERE id=?", (cid,))
@@ -483,7 +536,10 @@ def clip_words(cid: str):
     c = db.one("SELECT * FROM clips WHERE id=?", (cid,))
     if not c:
         raise HTTPException(404, "klip tidak ada")
+    s = db.one("SELECT width, height FROM sessions WHERE id=?", (c["session_id"],))
     tr = db.one("SELECT words FROM transcripts WHERE session_id=?", (c["session_id"],))
+    ct = db.one("SELECT path FROM crop_tracks WHERE clip_id=?", (cid,))
+    fc = json.loads(ct["path"]).get("facecam") if ct else None
     words = json.loads(tr["words"]) if tr else []
     ov = json.loads(c["caption_overrides"] or "{}")
     out = []
@@ -493,7 +549,11 @@ def clip_words(cid: str):
         out.append({"i": i, "orig": w["t"], "t": ov.get(str(i), w["t"]),
                     "s": round(max(w["s"], c["start_s"]) - c["start_s"], 3),
                     "e": round(min(w["e"], c["end_s"]) - c["start_s"], 3)})
-    return {"clip": c, "words": out, "style": styles.get(c["caption_style_id"])}
+    return {
+        "clip": c, "words": out, "style": styles.get(c["caption_style_id"]),
+        "source": {"width": s["width"] if s else 1920, "height": s["height"] if s else 1080},
+        "facecam": fc,
+    }
 
 
 class TitleIn(BaseModel):

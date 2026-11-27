@@ -191,6 +191,7 @@
       <div class="ed-left">
         <div class="stage" id="ed-stage">
           <video id="ed-video" preload="auto" playsinline></video>
+          <canvas id="ed-gaming-preview" class="gaming-prev hidden" aria-hidden="true"></canvas>
           <div class="ov-title hidden" id="ed-ov-title"></div>
           <div class="ov-cap" id="ed-ov-cap"></div>
         </div>
@@ -199,7 +200,7 @@
           <input type="range" id="ed-seek" min="0" max="100" step="0.01" value="0" aria-label="Posisi">
           <span class="hint tnum" id="ed-time">0:00</span>
         </div>
-        <p class="hint">Preview memakai video sumber dengan crop tengah. Posisi wajah dan layout 2 orang terlihat di hasil render.</p>
+        <p class="hint" id="ed-stage-hint">Preview memakai video sumber dengan crop tengah. Posisi wajah dan layout 2 orang terlihat di hasil render.</p>
       </div>
       <div class="ed-right">
         <div class="panel">
@@ -219,6 +220,50 @@
             <label for="ed-split">Tinggi facecam</label>
             <input id="ed-split" type="range" min="25" max="60" step="5">
             <b id="ed-split-val"></b>
+          </div>
+          <div class="gmode-row hidden" id="ed-gmode-box">
+            <span class="lbl">Mode Gaming</span>
+            <div class="seg" id="ed-gmode" role="radiogroup" aria-label="Mode Gaming">
+              <button type="button" data-v="auto" class="on">Otomatis (Face Track)</button>
+              <button type="button" data-v="manual">Crop Manual</button>
+            </div>
+          </div>
+          <div class="crop-wrap hidden" id="ed-crop-box">
+            <div class="row between crop-legend">
+              <div class="row">
+                <span class="leg"><i class="dot fc"></i>Facecam (Atas)</span>
+                <span class="leg"><i class="dot gp"></i>Gameplay (Bawah)</span>
+              </div>
+              <span class="hint">Geser kotak atau tarik sudutnya</span>
+            </div>
+            <div class="crop-board" id="gc-board">
+              <canvas id="gc-canvas"></canvas>
+              <div class="crop-box gp" id="gc-box-gp" data-box="gameplay" tabindex="0" aria-label="Area crop gameplay">
+                <span class="cb-tag">Gameplay</span>
+                <span class="cb-h nw" data-h="nw"></span>
+                <span class="cb-h ne" data-h="ne"></span>
+                <span class="cb-h sw" data-h="sw"></span>
+                <span class="cb-h se" data-h="se"></span>
+              </div>
+              <div class="crop-box fc" id="gc-box-fc" data-box="facecam" tabindex="0" aria-label="Area crop facecam">
+                <span class="cb-tag">Facecam</span>
+                <span class="cb-h nw" data-h="nw"></span>
+                <span class="cb-h ne" data-h="ne"></span>
+                <span class="cb-h sw" data-h="sw"></span>
+                <span class="cb-h se" data-h="se"></span>
+              </div>
+            </div>
+            <div class="row between mt">
+              <div class="row crop-corners">
+                <span class="hint">Facecam cepat:</span>
+                <button type="button" class="ghost xs" data-fc-corner="tl">Kiri Atas</button>
+                <button type="button" class="ghost xs" data-fc-corner="tr">Kanan Atas</button>
+                <button type="button" class="ghost xs" data-fc-corner="bl">Kiri Bawah</button>
+                <button type="button" class="ghost xs" data-fc-corner="br">Kanan Bawah</button>
+                <button type="button" class="ghost xs" id="gc-reset">Reset</button>
+              </div>
+              <button type="button" class="ghost sm" id="gc-apply-all">Terapkan ke semua klip sesi</button>
+            </div>
           </div>
         </div>
         <div class="panel">

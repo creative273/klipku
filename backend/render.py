@@ -107,7 +107,25 @@ def gameplay_avoid_facecam(bx, bw, fc, src_w, max_shift=0.12):
     return even(nb)
 
 
-def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
+def _manual_crop_box(rect, ratio, src_w, src_h):
+    """Ubah kotak manual ternormalisasi [x,y,w,h] (0..1) jadi piksel (w,h,x,y) berasio tepat."""
+    rx = max(0.0, min(1.0, float(rect[0]))) * src_w
+    ry = max(0.0, min(1.0, float(rect[1]))) * src_h
+    rw = max(0.05, min(1.0, float(rect[2]))) * src_w
+    rh = max(0.05, min(1.0, float(rect[3]))) * src_h
+    rw = min(rw, src_w - rx)
+    rh = min(rh, src_h - ry)
+    cx, cy = rx + rw / 2, ry + rh / 2
+    if rw / max(rh, 1.0) > ratio:
+        h = rh
+        w = h * ratio
+    else:
+        w = rw
+        h = w / ratio
+    return tracking._fit(w, h, cx - w / 2, cy - h / 2, src_w, src_h)
+
+
+def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None, gaming_crop=None):
     """Kembalikan (filter_complex -> [base], posisi caption [(s, e, y)] atau None)."""
     if fmt in ("face916", "square"):
         if analysis:
@@ -128,17 +146,26 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
     if fmt == "gaming916":
         top_h = even(H * gaming_split)
         bot_h = H - top_h
-        # bawah: crop tengah full frame, penuh tanpa bar
-        bw, bh, bx, by = center_crop(src_w, src_h, W / bot_h)
-        # atas: facecam (wajah yang diam sepanjang klip). Tidak ketemu: area tengah-atas.
-        fc = analysis.get("facecam") if analysis else None
-        bx = gameplay_avoid_facecam(bx, bw, fc, src_w)
-        if fc:
-            tw, th, tx, ty = tracking.facecam_box(fc, W / top_h, src_w, src_h)
+        gc = gaming_crop if isinstance(gaming_crop, dict) else {}
+        manual = gc.get("mode") == "manual"
+        if manual and isinstance(gc.get("gameplay"), list) and len(gc["gameplay"]) == 4:
+            bw, bh, bx, by = _manual_crop_box(gc["gameplay"], W / bot_h, src_w, src_h)
         else:
-            tw, th, _, _ = center_crop(src_w, src_h, W / top_h)
-            tw, th = even(tw * 0.5), even(th * 0.5)
-            tx, ty = even((src_w - tw) / 2), 0
+            # bawah: crop tengah full frame, penuh tanpa bar
+            bw, bh, bx, by = center_crop(src_w, src_h, W / bot_h)
+            fc = analysis.get("facecam") if analysis else None
+            bx = gameplay_avoid_facecam(bx, bw, fc, src_w)
+        if manual and isinstance(gc.get("facecam"), list) and len(gc["facecam"]) == 4:
+            tw, th, tx, ty = _manual_crop_box(gc["facecam"], W / top_h, src_w, src_h)
+        else:
+            # atas: facecam (wajah yang diam sepanjang klip). Tidak ketemu: area tengah-atas.
+            fc = analysis.get("facecam") if analysis else None
+            if fc:
+                tw, th, tx, ty = tracking.facecam_box(fc, W / top_h, src_w, src_h)
+            else:
+                tw, th, _, _ = center_crop(src_w, src_h, W / top_h)
+                tw, th = even(tw * 0.5), even(th * 0.5)
+                tx, ty = even((src_w - tw) / 2), 0
         y = top_h / H
         return (f"[0:v]split=2[a][b];"
                 f"[a]crop={tw}:{th}:{tx}:{ty},scale={W}:{top_h}:flags=lanczos[top];"
@@ -150,9 +177,12 @@ def video_graph(fmt, src_w, src_h, W, H, gaming_split=0.40, analysis=None):
 def render_clip(src: Path, src_w, src_h, clip: dict, words, out_path: Path, work: Path, job, style=None,
                 analysis=None, watermark=None, on_progress=None):
     """watermark: {"mode": "off|text|image", "text", "image" (path), "position", "opacity", "size"}"""
+    import json
+
     fmt = clip["format"]
     W, H = out_size(fmt, clip["resolution"])
-    graph, cap_pos = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40), analysis)
+    gc = json.loads(clip.get("gaming_crop") or "{}")
+    graph, cap_pos = video_graph(fmt, src_w, src_h, W, H, clip.get("gaming_split", 0.40), analysis, gaming_crop=gc)
     start, end = clip["start_s"], clip["end_s"]
     dur = end - start
 

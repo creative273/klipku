@@ -53,6 +53,8 @@ def _migrate(c):
     cols = {r[1] for r in c.execute("PRAGMA table_info(clips)")}
     if "title_overlay" not in cols:
         c.execute("ALTER TABLE clips ADD COLUMN title_overlay INTEGER NOT NULL DEFAULT 0 CHECK (title_overlay IN (0,1))")
+    if "gaming_crop" not in cols:
+        c.execute("ALTER TABLE clips ADD COLUMN gaming_crop TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(gaming_crop))")
     c.commit()
 
 

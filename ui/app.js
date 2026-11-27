@@ -382,6 +382,12 @@ async function rerenderClip(c) {
 }
 
 function trackNote(c) {
+  if (c.format === 'gaming916') {
+    try {
+      const gc = JSON.parse(c.gaming_crop || '{}');
+      if (gc.mode === 'manual') return 'Crop manual (Facecam + Gameplay)';
+    } catch { /* abaikan */ }
+  }
   const t = c.tracking;
   if (!t || !c.face_tracking) return '';
   if (c.format === 'gaming916') return t.facecam ? 'Facecam ketemu' : 'Facecam tidak ketemu, bagian atas pakai area tengah';
@@ -577,7 +583,11 @@ async function loadStyles() {
 
 // ---------- Caption Editor ----------
 
-const ED = { clip: null, words: [], overrides: {}, styleId: null, session: null, raf: 0 };
+const ED = {
+  clip: null, words: [], overrides: {}, styleId: null, session: null, raf: 0,
+  source: { width: 1920, height: 1080 }, facecam: null,
+  gamingCrop: { mode: 'auto', facecam: null, gameplay: null },
+};
 
 function groupWords(ws, maxWords) {
   const groups = [];
@@ -600,6 +610,220 @@ function edActiveWords() {
     .filter((w) => w.t);
 }
 
+// ---------- Gaming Manual Crop ----------
+
+function gcSourceAR() {
+  const v = $('ed-video');
+  const w = (v && v.videoWidth) || ED.source.width || 1920;
+  const h = (v && v.videoHeight) || ED.source.height || 1080;
+  return w / Math.max(1, h);
+}
+function gcSplit() { return Math.max(0.25, Math.min(0.60, Number($('ed-split').value || 40) / 100)); }
+function gcNormRatio(which) {
+  const split = gcSplit();
+  const outAR = 9 / 16;
+  const targetPixelRatio = which === 'facecam' ? (outAR / split) : (outAR / (1 - split));
+  return targetPixelRatio / gcSourceAR();
+}
+function gcFitBox(box, which) {
+  const nr = gcNormRatio(which);
+  let [x, y, w, h] = box;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  h = Math.max(0.08, Math.min(1, h));
+  w = h * nr;
+  if (w > 1) { w = 1; h = w / nr; }
+  if (w < 0.08) { w = 0.08; h = Math.min(1, w / nr); w = h * nr; }
+  x = Math.max(0, Math.min(1 - w, cx - w / 2));
+  y = Math.max(0, Math.min(1 - h, cy - h / 2));
+  return [x, y, w, h];
+}
+function gcDefaultBoxes() {
+  const nrFc = gcNormRatio('facecam');
+  const nrGp = gcNormRatio('gameplay');
+  let fc;
+  if (ED.facecam && ED.facecam.rect && ED.facecam.rect.length === 4) {
+    const [x0, y0, x1, y1] = ED.facecam.rect;
+    fc = gcFitBox([x0, y0, Math.max(0.12, x1 - x0), Math.max(0.12, y1 - y0)], 'facecam');
+  } else if (ED.facecam && typeof ED.facecam.cx === 'number') {
+    const h = Math.max(0.22, Math.min(0.45, (ED.facecam.h || 0.12) * 2.5));
+    const w = Math.min(0.9, h * nrFc);
+    fc = gcFitBox([ED.facecam.cx - w / 2, ED.facecam.cy - h * 0.45, w, h], 'facecam');
+  } else {
+    const h = 0.30;
+    const w = Math.min(0.5, h * nrFc);
+    fc = gcFitBox([0.03, 0.04, w, h], 'facecam');
+  }
+  const gpH = Math.min(1, 1 / Math.max(nrGp, 1));
+  const gpW = gpH * nrGp;
+  const gp = gcFitBox([(1 - gpW) / 2, (1 - gpH) / 2, gpW, gpH], 'gameplay');
+  return { facecam: fc, gameplay: gp };
+}
+function gcEnsureBoxes() {
+  const defs = gcDefaultBoxes();
+  if (!Array.isArray(ED.gamingCrop.facecam) || ED.gamingCrop.facecam.length !== 4) ED.gamingCrop.facecam = defs.facecam;
+  else ED.gamingCrop.facecam = gcFitBox(ED.gamingCrop.facecam, 'facecam');
+  if (!Array.isArray(ED.gamingCrop.gameplay) || ED.gamingCrop.gameplay.length !== 4) ED.gamingCrop.gameplay = defs.gameplay;
+  else ED.gamingCrop.gameplay = gcFitBox(ED.gamingCrop.gameplay, 'gameplay');
+}
+function gcIsManual() { return ED.format === 'gaming916' && ED.gamingCrop.mode === 'manual'; }
+
+function gcRenderBoxes() {
+  if (!gcIsManual()) return;
+  gcEnsureBoxes();
+  $('gc-board').style.aspectRatio = String(gcSourceAR());
+  for (const [key, id] of [['facecam', 'gc-box-fc'], ['gameplay', 'gc-box-gp']]) {
+    const [x, y, w, h] = ED.gamingCrop[key];
+    const b = $(id);
+    b.style.left = `${x * 100}%`;
+    b.style.top = `${y * 100}%`;
+    b.style.width = `${w * 100}%`;
+    b.style.height = `${h * 100}%`;
+  }
+}
+
+function gcDrawCanvases() {
+  const manual = gcIsManual();
+  const prev = $('ed-gaming-preview');
+  prev.classList.toggle('hidden', !manual);
+  if (!manual) return;
+  gcEnsureBoxes();
+  const v = $('ed-video');
+  const hasVideo = v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0;
+
+  // 1. Papan crop (video sumber penuh)
+  const board = $('gc-board');
+  const c1 = $('gc-canvas');
+  const bw = Math.max(2, Math.round(board.clientWidth * (window.devicePixelRatio || 1)));
+  const bh = Math.max(2, Math.round(board.clientHeight * (window.devicePixelRatio || 1)));
+  if (c1.width !== bw || c1.height !== bh) { c1.width = bw; c1.height = bh; }
+  const ctx1 = c1.getContext('2d');
+  ctx1.clearRect(0, 0, bw, bh);
+  if (hasVideo) {
+    ctx1.drawImage(v, 0, 0, bw, bh);
+    // sedikit redupkan keseluruhan supaya kotak crop makin jelas terbaca
+    ctx1.fillStyle = 'rgba(5, 8, 15, 0.34)';
+    ctx1.fillRect(0, 0, bw, bh);
+    // tampilkan area crop dengan kecerahan penuh
+    for (const key of ['gameplay', 'facecam']) {
+      const [x, y, w, h] = ED.gamingCrop[key];
+      ctx1.drawImage(v, x * v.videoWidth, y * v.videoHeight, w * v.videoWidth, h * v.videoHeight,
+        x * bw, y * bh, w * bw, h * bh);
+    }
+  }
+
+  // 2. Preview 9:16 langsung (atas Facecam, bawah Gameplay)
+  const stage = $('ed-stage');
+  const pw = Math.max(2, Math.round(stage.clientWidth * (window.devicePixelRatio || 1)));
+  const ph = Math.max(2, Math.round(stage.clientHeight * (window.devicePixelRatio || 1)));
+  if (prev.width !== pw || prev.height !== ph) { prev.width = pw; prev.height = ph; }
+  const ctx2 = prev.getContext('2d');
+  ctx2.fillStyle = '#06090f';
+  ctx2.fillRect(0, 0, pw, ph);
+  if (hasVideo) {
+    const split = gcSplit();
+    const topH = Math.round(ph * split);
+    const botH = ph - topH;
+    const [fx, fy, fw, fh] = ED.gamingCrop.facecam;
+    const [gx, gy, gw, gh] = ED.gamingCrop.gameplay;
+    ctx2.drawImage(v, fx * v.videoWidth, fy * v.videoHeight, fw * v.videoWidth, fh * v.videoHeight, 0, 0, pw, topH);
+    ctx2.drawImage(v, gx * v.videoWidth, gy * v.videoHeight, gw * v.videoWidth, gh * v.videoHeight, 0, topH, pw, botH);
+    ctx2.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx2.fillRect(0, topH - 1, pw, 2);
+  }
+}
+
+function gcSetupInteractions() {
+  const board = $('gc-board');
+  let drag = null;
+  board.addEventListener('pointerdown', (ev) => {
+    const boxEl = ev.target.closest('.crop-box');
+    if (!boxEl) return;
+    ev.preventDefault();
+    const which = boxEl.dataset.box;
+    const handle = ev.target.dataset.h || 'move';
+    board.querySelectorAll('.crop-box').forEach((b) => b.classList.toggle('active', b === boxEl));
+    const rect = board.getBoundingClientRect();
+    drag = {
+      which, handle, rect,
+      startX: ev.clientX, startY: ev.clientY,
+      orig: [...ED.gamingCrop[which]],
+      nr: gcNormRatio(which),
+    };
+    boxEl.setPointerCapture(ev.pointerId);
+  });
+  board.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    const { which, handle, rect, startX, startY, orig, nr } = drag;
+    const [ox, oy, ow, oh] = orig;
+    const dx = (ev.clientX - startX) / Math.max(1, rect.width);
+    const dy = (ev.clientY - startY) / Math.max(1, rect.height);
+    if (handle === 'move') {
+      const nx = Math.max(0, Math.min(1 - ow, ox + dx));
+      const ny = Math.max(0, Math.min(1 - oh, oy + dy));
+      ED.gamingCrop[which] = [nx, ny, ow, oh];
+    } else {
+      const ax = handle.includes('w') ? ox + ow : ox;
+      const ay = handle.includes('n') ? oy + oh : oy;
+      const maxW = handle.includes('w') ? ax : 1 - ax;
+      const maxH = handle.includes('n') ? ay : 1 - ay;
+      const px = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width)));
+      const py = Math.max(0, Math.min(1, (ev.clientY - rect.top) / Math.max(1, rect.height)));
+      const candW = handle.includes('w') ? ax - px : px - ax;
+      const candH = handle.includes('n') ? ay - py : py - ay;
+      let nh = Math.max(candH, candW / nr);
+      const minH = Math.max(0.08, 0.08 / nr);
+      const capH = Math.min(maxH, maxW / nr);
+      nh = Math.max(Math.min(minH, capH), Math.min(capH, nh));
+      const nw = nh * nr;
+      const nx = handle.includes('w') ? ax - nw : ax;
+      const ny = handle.includes('n') ? ay - nh : ay;
+      ED.gamingCrop[which] = [Math.max(0, nx), Math.max(0, ny), nw, nh];
+    }
+    gcRenderBoxes();
+    gcDrawCanvases();
+  });
+  const endDrag = () => { drag = null; };
+  board.addEventListener('pointerup', endDrag);
+  board.addEventListener('pointercancel', endDrag);
+
+  document.querySelectorAll('[data-fc-corner]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      gcEnsureBoxes();
+      const [, , w, h] = ED.gamingCrop.facecam;
+      const m = 0.02;
+      const c = btn.dataset.fcCorner;
+      const x = c.includes('r') ? Math.max(0, 1 - w - m) : m;
+      const y = c.includes('b') ? Math.max(0, 1 - h - m) : m;
+      ED.gamingCrop.facecam = [x, y, w, h];
+      gcRenderBoxes();
+      gcDrawCanvases();
+    });
+  });
+  $('gc-reset').onclick = () => {
+    const defs = gcDefaultBoxes();
+    ED.gamingCrop.facecam = defs.facecam;
+    ED.gamingCrop.gameplay = defs.gameplay;
+    gcRenderBoxes();
+    gcDrawCanvases();
+  };
+  $('gc-apply-all').onclick = async () => {
+    if (!ED.clip) return;
+    gcEnsureBoxes();
+    const b = $('gc-apply-all');
+    b.disabled = true;
+    try {
+      const r = await api(`/sessions/${ED.clip.session_id}/gaming-crop`, {
+        method: 'PUT',
+        body: { gaming_crop: ED.gamingCrop, gaming_split: gcSplit(), set_format: true },
+      });
+      toast(`Crop Gaming diterapkan ke semua ${r.updated} klip di sesi ini.`);
+    } catch (e) { toast(e.message, true); }
+    b.disabled = false;
+  };
+}
+gcSetupInteractions();
+
 async function openEditor(cid) {
   let r;
   try { r = await api(`/clips/${cid}/words`); } catch (e) { return toast(e.message, true); }
@@ -607,6 +831,15 @@ async function openEditor(cid) {
   ED.words = r.words;
   ED.overrides = JSON.parse(r.clip.caption_overrides || '{}');
   ED.styleId = r.clip.caption_style_id || (r.style && r.style.id);
+  ED.source = r.source || { width: 1920, height: 1080 };
+  ED.facecam = r.facecam || null;
+  let gc = {};
+  try { gc = JSON.parse(r.clip.gaming_crop || '{}'); } catch { gc = {}; }
+  ED.gamingCrop = {
+    mode: gc.mode === 'manual' ? 'manual' : 'auto',
+    facecam: Array.isArray(gc.facecam) ? gc.facecam : null,
+    gameplay: Array.isArray(gc.gameplay) ? gc.gameplay : null,
+  };
   ED.titles = [];
   if (!STYLES.length) await loadStyles();
   show('editor');
@@ -614,6 +847,7 @@ async function openEditor(cid) {
   $('ed-head').textContent = `Edit klip #${c.rank}`;
   ED.format = c.format;
   edFmt.set(c.format);
+  edGmode.set(ED.gamingCrop.mode);
   $('ed-face').checked = !!c.face_tracking;
   $('ed-split').value = Math.round((c.gaming_split || 0.4) * 100);
   edFormatUi();
@@ -621,11 +855,15 @@ async function openEditor(cid) {
   $('ed-title-ov').checked = !!c.title_overlay;
   $('ed-subs').checked = !!c.subtitle_on;
   $('ed-titles').innerHTML = '';
-  const stage = $('ed-stage');
   edStageShape();
   const v = $('ed-video');
   v.src = media(`/sessions/${c.session_id}/source`);
-  v.onloadedmetadata = () => { v.currentTime = c.start_s; drawOverlay(); };
+  v.onloadedmetadata = () => {
+    v.currentTime = c.start_s;
+    gcRenderBoxes();
+    drawOverlay();
+  };
+  v.onloadeddata = () => { gcRenderBoxes(); drawOverlay(); };
   v.onerror = () => toast('Video sumber tidak bisa diputar (mungkin sudah dihapus). Caption tetap bisa diedit.', true);
   $('ed-seek').max = (c.end_s - c.start_s).toFixed(2);
   renderPresets();
@@ -635,16 +873,29 @@ async function openEditor(cid) {
 }
 
 const edFmt = choice('ed-format', (v) => { ED.format = v; edFormatUi(); });
+const edGmode = choice('ed-gmode', (v) => {
+  ED.gamingCrop.mode = v === 'manual' ? 'manual' : 'auto';
+  if (ED.gamingCrop.mode === 'manual') gcEnsureBoxes();
+  edFormatUi();
+});
 function edStageShape() {
   const f = ED.format;
   $('ed-stage').className = 'stage' + (f === 'square' ? ' square' : f === 'landscape' ? ' landscape' : f === 'blurbg916' ? ' blur' : '');
 }
 function edFormatUi() {
   const f = ED.format;
-  $('ed-split-box').classList.toggle('hidden', f !== 'gaming916');
+  const isGaming = f === 'gaming916';
+  const manual = gcIsManual();
+  $('ed-split-box').classList.toggle('hidden', !isGaming);
+  $('ed-gmode-box').classList.toggle('hidden', !isGaming);
+  $('ed-crop-box').classList.toggle('hidden', !manual);
   $('ed-split-val').textContent = `${$('ed-split').value}%`;
-  $('ed-face').disabled = !['face916', 'square', 'gaming916'].includes(f);
+  $('ed-face').disabled = !['face916', 'square', 'gaming916'].includes(f) || manual;
+  $('ed-stage-hint').textContent = manual
+    ? 'Preview langsung sesuai area Facecam (atas) dan Gameplay (bawah) yang kamu pilih.'
+    : 'Preview memakai video sumber dengan crop tengah. Posisi wajah dan layout 2 orang terlihat di hasil render.';
   edStageShape();
+  if (manual) gcRenderBoxes();
   drawOverlay();
 }
 $('ed-split').addEventListener('input', edFormatUi);
@@ -653,6 +904,7 @@ function edRel() { return Math.max(0, $('ed-video').currentTime - ED.clip.start_
 
 function drawOverlay() {
   if (!ED.clip || !$('view-editor').classList.contains('on')) return;
+  gcDrawCanvases();
   const c = ED.clip;
   const st = edStyle();
   if (!st) return;
@@ -735,7 +987,7 @@ $('ed-video').addEventListener('pause', () => { $('ed-play').textContent = 'Puta
 $('ed-video').addEventListener('seeked', drawOverlay);
 $('ed-seek').addEventListener('input', () => { $('ed-video').currentTime = ED.clip.start_s + Number($('ed-seek').value); });
 ['ed-title', 'ed-title-ov', 'ed-subs'].forEach((id) => $(id).addEventListener('input', drawOverlay));
-window.addEventListener('resize', drawOverlay);
+window.addEventListener('resize', () => { gcRenderBoxes(); drawOverlay(); });
 
 function renderWords() {
   const box = $('ed-words');
@@ -860,6 +1112,7 @@ $('ed-regen').onclick = async () => {
 
 async function edSave(render) {
   if (ED.styleId === '__draft') return toast('Simpan preset baru dulu, atau pilih salah satu preset.', true);
+  if (gcIsManual()) gcEnsureBoxes();
   try {
     await api(`/clips/${ED.clip.id}`, {
       method: 'PATCH',
@@ -867,6 +1120,7 @@ async function edSave(render) {
         hook_title: $('ed-title').value, title_overlay: $('ed-title-ov').checked, subtitle_on: $('ed-subs').checked,
         caption_style_id: ED.styleId, caption_overrides: ED.overrides,
         format: ED.format, face_tracking: $('ed-face').checked, gaming_split: Number($('ed-split').value) / 100,
+        gaming_crop: ED.gamingCrop,
       },
     });
     if (render) {

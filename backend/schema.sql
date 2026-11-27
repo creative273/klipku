@@ -88,6 +88,7 @@ CREATE TABLE clips (
   caption_style_id TEXT REFERENCES caption_styles(id) ON DELETE SET NULL,
   caption_overrides TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(caption_overrides)), -- {"word_idx": "teks baru"}
   gaming_split  REAL NOT NULL DEFAULT 0.40 CHECK (gaming_split BETWEEN 0.25 AND 0.60), -- tinggi bagian muka
+  gaming_crop   TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(gaming_crop)), -- {"mode":"auto|manual","facecam":[x,y,w,h],"gameplay":[x,y,w,h]}
   resolution    TEXT NOT NULL DEFAULT '1080p' CHECK (resolution IN ('720p','1080p','2k','4k')),
   status        TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','tracking','rendering','done','failed','cancelled')),

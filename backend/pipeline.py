@@ -276,8 +276,9 @@ def _run_render(sid, clip_ids, job: Job):
         emit(sid, "clip", id=c["id"], status="rendering")
         n = len(clips)
         label = f"Klip {i + 1} dari {n}"
-        needs_track = c["face_tracking"] and c["format"] in TRACKED and not db.one(
-            "SELECT 1 FROM crop_tracks WHERE clip_id=?", (c["id"],))
+        manual_gaming = c["format"] == "gaming916" and json.loads(c.get("gaming_crop") or "{}").get("mode") == "manual"
+        use_track = bool(c["face_tracking"]) and c["format"] in TRACKED and not manual_gaming
+        needs_track = use_track and not db.one("SELECT 1 FROM crop_tracks WHERE clip_id=?", (c["id"],))
         split = 0.35 if needs_track else 0.0
 
         def track_prog(frac, i=i, n=n, label=label, split=split):
@@ -292,7 +293,7 @@ def _run_render(sid, clip_ids, job: Job):
         try:
             t0 = time.time()
             analysis = None
-            if c["face_tracking"] and c["format"] in TRACKED:
+            if use_track:
                 analysis = _analysis(sid, s, c, src, job, track_prog)
                 db.update("clips", c["id"], {"status": "rendering"})
                 emit(sid, "clip", id=c["id"], status="rendering")
