@@ -3,11 +3,10 @@ const $ = (id) => document.getElementById(id);
 const K = window.klipku;
 
 // Konfigurasi Kreator untuk layar awal & tombol "Dukung Kreator".
-// Ganti dengan link channel YouTube dan Saweria milikmu sebelum build rilis publik.
 const CREATOR = {
-  youtubeHandle: '@channelkamu',
-  youtubeUrl: 'https://www.youtube.com/@channelkamu?sub_confirmation=1',
-  saweriaUrl: 'https://saweria.co/usernamekamu',
+  youtubeHandle: '@misterisia',
+  youtubeUrl: 'https://www.youtube.com/@misterisia?sub_confirmation=1',
+  saweriaUrl: 'https://saweria.co/rayacill',
 };
 
 let B = null; // { url, token }
